@@ -195,6 +195,44 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── Mic button ── */
+    .mic-btn {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: transparent; border: 1px solid var(--border);
+      color: var(--dim); cursor: pointer; display: flex;
+      align-items: center; justify-content: center;
+      font-size: 13px; transition: all .13s; outline: none; flex-shrink: 0;
+    }
+    .mic-btn:hover { border-color: var(--border2); color: var(--text); }
+    .mic-btn.on {
+      background: rgba(160,40,40,.18); border-color: #b03030; color: #ff7070;
+      animation: mic-ring 1.5s ease infinite;
+    }
+    @keyframes mic-ring {
+      0%,100% { box-shadow: 0 0 0 0 rgba(160,40,40,.5); }
+      60%      { box-shadow: 0 0 0 5px rgba(160,40,40,0); }
+    }
+    .interim-bar {
+      padding: 3px 16px; font-size: 11px; color: var(--muted);
+      font-style: italic; background: var(--s2); border-bottom: 1px solid var(--border);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0;
+    }
+    .interim-chat {
+      font-size: 10px; color: var(--muted); font-style: italic;
+      padding: 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* ── Refresh button ── */
+    .refresh-btn {
+      display: flex; align-items: center; gap: 4px;
+      padding: 5px 11px; border-radius: 4px; font-size: 11px;
+      letter-spacing: .06em; cursor: pointer; border: 1px solid var(--border);
+      background: transparent; color: var(--dim); transition: all .13s; outline: none;
+    }
+    .refresh-btn:hover { border-color: var(--border2); color: var(--text); }
+    .refresh-ico { display: inline-block; transition: transform .35s; }
+    .refresh-btn:hover .refresh-ico { transform: rotate(180deg); }
+
     /* ── Codex Tab ── */
     .codex-tab { height: 100%; display: flex; flex-direction: column; }
     .codex-bar {
@@ -614,11 +652,25 @@ function CodexItemModal({ section, onAdd, onClose }) {
 // ─────────────────────────────────────────────
 // AI CHAT PANEL
 // ─────────────────────────────────────────────
-function AIChatPanel({ history, onSend, loading, locked, onLockAdd }) {
-  const [input, setInput] = useState('');
-  const [mode,  setMode]  = useState('writer');
+function AIChatPanel({ history, onSend, loading, locked, onLockAdd, onToast }) {
+  const [input,   setInput]   = useState('');
+  const [mode,    setMode]    = useState('writer');
+  const [interim, setInterim] = useState('');
   const endRef = useRef(null);
   const inRef  = useRef(null);
+
+  const insertIntoChat = (text) => {
+    const el = inRef.current;
+    if (!el) { setInput(prev => prev + text); return; }
+    const s = el.selectionStart ?? el.value.length;
+    const e = el.selectionEnd ?? el.value.length;
+    const nv = el.value.slice(0, s) + text + ' ' + el.value.slice(e);
+    setInput(nv);
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = s + text.length + 1;
+      el.focus();
+    });
+  };
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [history, loading]);
 
@@ -697,7 +749,13 @@ function AIChatPanel({ history, onSend, loading, locked, onLockAdd }) {
             <button key={k} className={`mbtn ${mode===k?'on':''}`} onClick={()=>setMode(k)}>{v}</button>
           ))}
         </div>
+        {interim && <div className="interim-chat">🎙 {interim}</div>}
         <div className="input-row">
+          <MicButton
+            onFinal={insertIntoChat}
+            onInterim={setInterim}
+            onError={msg => onToast(msg)}
+          />
           <textarea ref={inRef} className="chat-in" rows={2} value={input}
             onChange={e=>setInput(e.target.value)} disabled={loading}
             placeholder={`Írj a Társírónak… (${modes.find(m=>m[0]===mode)?.[1]})`}
@@ -712,23 +770,108 @@ function AIChatPanel({ history, onSend, loading, locked, onLockAdd }) {
 }
 
 // ─────────────────────────────────────────────
+// MIC BUTTON
+// ─────────────────────────────────────────────
+function MicButton({ onFinal, onInterim, onError }) {
+  const [active, setActive] = useState(false);
+  const recRef = useRef(null);
+
+  const supported = typeof window !== 'undefined' &&
+    !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  const toggle = () => {
+    if (!supported) {
+      onError('A diktálás Chrome böngészőben érhető el.');
+      return;
+    }
+    if (active) {
+      recRef.current?.stop();
+      recRef.current = null;
+      setActive(false);
+      onInterim('');
+      return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SR();
+    rec.lang = 'hu-HU';
+    rec.continuous = true;
+    rec.interimResults = true;
+
+    rec.onresult = (e) => {
+      let fin = '', interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) fin += t;
+        else interim += t;
+      }
+      onInterim(interim);
+      if (fin) { onFinal(fin); onInterim(''); }
+    };
+
+    rec.onerror = (ev) => {
+      onError('Mikrofon hiba: ' + ev.error);
+      setActive(false);
+      onInterim('');
+    };
+
+    rec.onend = () => { setActive(false); onInterim(''); };
+
+    recRef.current = rec;
+    rec.start();
+    setActive(true);
+  };
+
+  return (
+    <button
+      className={`mic-btn ${active ? 'on' : ''}`}
+      onClick={toggle}
+      title={active ? 'Diktálás leállítása' : 'Diktálás indítása (hu-HU)'}
+    >
+      🎙
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────
 // EDITOR TAB
 // ─────────────────────────────────────────────
-function EditorTab({ story, setStory, history, onSend, loading, codex, locked, onLockAdd }) {
+function EditorTab({ story, setStory, history, onSend, loading, codex, locked, onLockAdd, onToast }) {
+  const areaRef = useRef(null);
+  const [interim, setInterim] = useState('');
+
+  const insertIntoStory = (text) => {
+    const el = areaRef.current;
+    if (!el) { setStory(prev => prev + text); return; }
+    const s = el.selectionStart ?? el.value.length;
+    const e = el.selectionEnd ?? el.value.length;
+    const nv = el.value.slice(0, s) + text + ' ' + el.value.slice(e);
+    setStory(nv);
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = s + text.length + 1;
+      el.focus();
+    });
+  };
+
   return (
     <div className="editor-tab">
       <div className="story-panel">
         <div className="panel-hdr">
           <span className="ph-label">Szöveg</span>
+          <MicButton
+            onFinal={insertIntoStory}
+            onInterim={setInterim}
+            onError={msg => onToast(msg)}
+          />
           <span style={{marginLeft:'auto',fontSize:9,color:'var(--muted)'}}>
             {words(story).toLocaleString('hu-HU')} szó
           </span>
         </div>
-        <textarea className="story-area" value={story} onChange={e=>setStory(e.target.value)}
+        {interim && <div className="interim-bar">🎙 {interim}</div>}
+        <textarea ref={areaRef} className="story-area" value={story} onChange={e=>setStory(e.target.value)}
           spellCheck={false}
           placeholder="Kezdd el írni a történetedet… Az AI látja minden szavadat és ahhoz igazodik."/>
       </div>
-      <AIChatPanel history={history} onSend={onSend} loading={loading} locked={locked} onLockAdd={onLockAdd}/>
+      <AIChatPanel history={history} onSend={onSend} loading={loading} locked={locked} onLockAdd={onLockAdd} onToast={onToast}/>
     </div>
   );
 }
@@ -1002,6 +1145,9 @@ function App() {
           ))}
         </nav>
         <div className="hdr-right">
+          <button className="refresh-btn" onClick={() => window.location.reload(true)}>
+            <span className="refresh-ico">↻</span> Frissítés
+          </button>
           {locked.length > 0 && (
             <span style={{fontSize:10,color:'var(--gold)',opacity:.8,letterSpacing:'.06em'}}>
               🔒 {locked.length}
@@ -1019,7 +1165,7 @@ function App() {
       <main className="content">
         {tab === 'editor' && (
           <EditorTab story={story} setStory={setStory} history={history}
-            onSend={onSend} loading={loading} codex={codex} locked={locked} onLockAdd={addLock}/>
+            onSend={onSend} loading={loading} codex={codex} locked={locked} onLockAdd={addLock} onToast={toast$}/>
         )}
         {tab === 'codex' && (
           <CodexTab codex={codex} setCodex={setCodex} locked={locked} setLocked={setLocked}/>
