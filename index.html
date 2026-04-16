@@ -12,19 +12,19 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     :root {
-      --bg:       #07070f;
-      --s1:       #0d0d1c;
-      --s2:       #111122;
-      --s3:       #17172a;
-      --border:   #1c1c30;
-      --border2:  #28283f;
-      --gold:     #c9a84c;
-      --gold-dim: #7a6030;
-      --text:     #d6c8a8;
-      --dim:      #8a7a60;
-      --muted:    #4a4035;
-      --ai-bg:    #0a1020;
-      --usr-bg:   #0e0a16;
+      --bg:       #0e0b07;
+      --s1:       #141008;
+      --s2:       #1b1510;
+      --s3:       #221b14;
+      --border:   #2e2318;
+      --border2:  #3d3020;
+      --gold:     #d4a843;
+      --gold-dim: #8a6828;
+      --text:     #ecdcb0;
+      --dim:      #a08858;
+      --muted:    #604e34;
+      --ai-bg:    #100e0a;
+      --usr-bg:   #161210;
       --red:      #8b2a2a;
       --redt:     #e07070;
       --green:    #1e5c2e;
@@ -91,13 +91,48 @@
     }
     .ph-label { font-size: 10px; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
     .story-area {
-      flex: 1; background: var(--s1); border: none; outline: none;
+      flex: 1; background: #1c1710; border: none; outline: none;
       resize: none; padding: 28px 36px;
       font-family: 'IM Fell English', Georgia, serif;
-      font-size: 16px; line-height: 2; color: var(--text);
+      font-size: 17px; line-height: 2; color: var(--text);
       overflow-y: auto;
     }
     .story-area::placeholder { color: var(--muted); font-style: italic; }
+
+    /* ── Unified Editor ── */
+    .editor-unified { height: 100%; display: flex; flex-direction: column; }
+    .story-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+    .ai-response-panel {
+      max-height: 240px; border-top: 2px solid var(--border2);
+      background: var(--ai-bg); display: flex; flex-direction: column; flex-shrink: 0;
+      transition: max-height .2s;
+    }
+    .ai-resp-hdr {
+      height: 32px; padding: 0 14px; flex-shrink: 0;
+      display: flex; align-items: center; gap: 8px;
+      border-bottom: 1px solid var(--border); background: var(--s1);
+    }
+    .ai-resp-body {
+      flex: 1; overflow-y: auto; padding: 12px 16px;
+      font-size: 13.5px; line-height: 1.75; color: var(--text);
+      white-space: pre-wrap; word-break: break-word;
+      font-family: 'IM Fell English', Georgia, serif;
+    }
+    .ai-hist-scroll {
+      flex: 1; overflow-y: auto; padding: 6px 12px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .command-bar {
+      border-top: 1px solid var(--border); background: var(--s1); flex-shrink: 0;
+    }
+    .cmd-row { padding: 7px 10px; display: flex; flex-direction: column; gap: 6px; }
+    .insert-btn {
+      padding: 2px 10px; border-radius: 3px; font-size: 10px; letter-spacing: .06em;
+      cursor: pointer; border: 1px solid var(--gold-dim); background: rgba(212,168,67,.1);
+      color: var(--gold); outline: none; transition: all .12s;
+    }
+    .insert-btn:hover { background: var(--gold); color: var(--bg); }
 
     /* ── AI Panel ── */
     .ai-panel {
@@ -371,7 +406,7 @@ const { useState, useEffect, useRef, useCallback } = React;
 const STORE_KEY  = 'tarsiro_v1';
 const KEY_KEY    = 'tarsiro_apikey';
 const MODEL      = 'claude-sonnet-4-5';
-const MAX_TOKENS = 1000;
+const MAX_TOKENS = 4096;
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -476,6 +511,7 @@ async function callClaude(apiKey, apiMsgs, storyText, codex, locked, mode, onChu
   const reader = resp.body.getReader();
   const dec = new TextDecoder();
   let full = '';
+  let hitMaxTokens = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -490,10 +526,20 @@ async function callClaude(apiKey, apiMsgs, storyText, codex, locked, mode, onChu
           full += j.delta.text;
           onChunk(full);
         }
+        if (j.type === 'message_delta' && j.delta?.stop_reason === 'max_tokens') { hitMaxTokens = true; }
       } catch {}
     }
   }
-  return full;
+  return { text: full, hitMaxTokens };
+}
+
+function trimToSentence(text) {
+  if (!text || /[.!?…»"']\s*$/.test(text)) return text;
+  let lastEnd = -1;
+  for (let i = text.length - 1; i >= 0; i--) {
+    if ('.!?…»"\''.includes(text[i])) { lastEnd = i; break; }
+  }
+  return lastEnd > text.length * 0.4 ? text.slice(0, lastEnd + 1) : text;
 }
 
 // ─────────────────────────────────────────────
@@ -835,43 +881,132 @@ function MicButton({ onFinal, onInterim, onError }) {
 // ─────────────────────────────────────────────
 // EDITOR TAB
 // ─────────────────────────────────────────────
-function EditorTab({ story, setStory, history, onSend, loading, codex, locked, onLockAdd, onToast }) {
-  const areaRef = useRef(null);
-  const [interim, setInterim] = useState('');
+function EditorTab({ story, setStory, history, onSend, loading, codex, locked, onLockAdd, onToast, lastInserted }) {
+  const areaRef    = useRef(null);
+  const chatInRef  = useRef(null);
+  const respRef    = useRef(null);
+  const [interim,   setInterim]   = useState('');
+  const [chatInput, setChatInput] = useState('');
+  const [mode,      setMode]      = useState('writer');
+  const [showHist,  setShowHist]  = useState(false);
 
-  const insertIntoStory = (text) => {
+  const insertIntoStory = (text, atEnd=false) => {
     const el = areaRef.current;
     if (!el) { setStory(prev => prev + text); return; }
+    const pos = atEnd ? el.value.length : (el.selectionStart ?? el.value.length);
+    const end = atEnd ? el.value.length : (el.selectionEnd ?? el.value.length);
+    const sep = (pos > 0 && el.value[pos-1] !== '\n') ? '\n\n' : '';
+    const nv  = el.value.slice(0, pos) + sep + text + el.value.slice(end);
+    setStory(nv);
+    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = pos + sep.length + text.length; el.focus(); });
+  };
+
+  const insertIntoChat = (text) => {
+    const el = chatInRef.current;
+    if (!el) { setChatInput(prev => prev + text); return; }
     const s = el.selectionStart ?? el.value.length;
     const e = el.selectionEnd ?? el.value.length;
     const nv = el.value.slice(0, s) + text + ' ' + el.value.slice(e);
-    setStory(nv);
-    requestAnimationFrame(() => {
-      el.selectionStart = el.selectionEnd = s + text.length + 1;
-      el.focus();
-    });
+    setChatInput(nv);
+    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = s + text.length + 1; el.focus(); });
   };
 
+  const lastAI = history.length > 0 && history[history.length-1].role === 'ai' ? history[history.length-1] : null;
+
+  useEffect(() => {
+    if (respRef.current) respRef.current.scrollTop = respRef.current.scrollHeight;
+  }, [lastAI?.content, loading]);
+
+  const send = () => {
+    if (!chatInput.trim() || loading) return;
+    onSend(chatInput.trim(), mode);
+    setChatInput('');
+  };
+
+  const quick = [
+    { l:'Merre vigyük?',  m:'Adj 3 konkrét irányvonalat ahol most tart a történet.', qmode:'brainstorm' },
+    { l:'Írj tovább',     m:'Írj tovább a szöveghez — maradj az eddigi hangnemben és tempóban.', qmode:'writer' },
+    { l:'Párbeszéd',      m:'Írj egy párbeszédet ami illik a jelenlegi szituációhoz.', qmode:'writer' },
+    { l:'Ellenőrzés',     m:'Ellenőrizd a szöveget logikai hibákért, ellentmondásokért.', qmode:'edit' },
+    { l:'Referencia',     m:'Melyik nagy műre hasonlít leginkább az eddigi szöveg?', qmode:'reference' },
+    { l:'Kérdezz rám',   m:'Ne írj semmit — csak kérdezz rám a történettel kapcsolatban.', qmode:'brainstorm' },
+  ];
+  const modes = [['writer','✍ Ír'],['brainstorm','💡 Ötlet'],['edit','✏ Szerkeszt'],['reference','📚 Ref']];
+
+  const showResp = !!(lastAI || loading);
+
   return (
-    <div className="editor-tab">
-      <div className="story-panel">
+    <div className="editor-unified">
+      <div className="story-wrap">
+        {interim && <div className="interim-bar">🎙 {interim}</div>}
         <div className="panel-hdr">
           <span className="ph-label">Szöveg</span>
-          <MicButton
-            onFinal={insertIntoStory}
-            onInterim={setInterim}
-            onError={msg => onToast(msg)}
-          />
-          <span style={{marginLeft:'auto',fontSize:9,color:'var(--muted)'}}>
-            {words(story).toLocaleString('hu-HU')} szó
-          </span>
+          <MicButton onFinal={insertIntoStory} onInterim={setInterim} onError={msg=>onToast(msg)}/>
+          <span style={{marginLeft:'auto',fontSize:9,color:'var(--muted)'}}>{words(story).toLocaleString('hu-HU')} szó</span>
         </div>
-        {interim && <div className="interim-bar">🎙 {interim}</div>}
         <textarea ref={areaRef} className="story-area" value={story} onChange={e=>setStory(e.target.value)}
-          spellCheck={false}
-          placeholder="Kezdd el írni a történetedet… Az AI látja minden szavadat és ahhoz igazodik."/>
+          spellCheck={false} placeholder="Kezdd el írni a történetedet… Az AI látja minden szavadat és ahhoz igazodik."/>
       </div>
-      <AIChatPanel history={history} onSend={onSend} loading={loading} locked={locked} onLockAdd={onLockAdd} onToast={onToast}/>
+
+      {showResp && (
+        <div className="ai-response-panel">
+          <div className="ai-resp-hdr">
+            <div className={`ai-dot ${loading ? 'pulse' : ''}`}/>
+            <span style={{fontSize:10,color:'var(--dim)',letterSpacing:'.1em',textTransform:'uppercase'}}>Társíró AI</span>
+            {lastAI?.content && (
+              <>
+                <button className="insert-btn" onClick={()=>{ insertIntoStory(lastAI.content, true); onToast('✓ Beillesztve',true); }}>↩ Beillesztés</button>
+                <button className="msg-lock" style={{opacity:1}} onClick={()=>onLockAdd(lastAI.content.slice(0,120)+(lastAI.content.length>120?'…':''))}>🔒 zárol</button>
+              </>
+            )}
+            <button style={{marginLeft:'auto',background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:11,padding:'0 4px'}}
+              onClick={()=>setShowHist(h=>!h)}>{showHist?'▼ Utolsó':'▲ Előzmény'}</button>
+          </div>
+          {showHist ? (
+            <div className="ai-hist-scroll">
+              {history.map((m,i) => (
+                <div key={i} className={`msg ${m.role}`}>
+                  <div className="bubble" style={{fontSize:12}}>{m.role==='ai'&&!m.content?<div className="typing-dots"><span/><span/><span/></div>:m.content}</div>
+                  <div className="msg-meta"><span className="msg-time">{hhmm(m.ts)}</span></div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="ai-resp-body" ref={respRef}>
+              {loading && !(lastAI?.content) ? (
+                <div className="typing-dots"><span/><span/><span/></div>
+              ) : (lastAI?.content || '')}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="command-bar">
+        <div className="quick-bar" style={{borderBottom:'none',borderTop:'1px solid var(--border)'}}>
+          {quick.map((q,i)=>(
+            <button key={i} className="qbtn" disabled={loading}
+              onClick={()=>{ setMode(q.qmode||mode); onSend(q.m, q.qmode||mode); }}>{q.l}</button>
+          ))}
+        </div>
+        <div className="cmd-row">
+          <div className="mode-row">
+            {modes.map(([k,v])=>(
+              <button key={k} className={`mbtn ${mode===k?'on':''}`} onClick={()=>setMode(k)}>{v}</button>
+            ))}
+          </div>
+          {interim && <div className="interim-chat">🎙 {interim}</div>}
+          <div className="input-row">
+            <MicButton onFinal={insertIntoChat} onInterim={setInterim} onError={msg=>onToast(msg)}/>
+            <textarea ref={chatInRef} className="chat-in" rows={2} value={chatInput}
+              onChange={e=>setChatInput(e.target.value)} disabled={loading}
+              placeholder={`Írj a Társírónak… (${modes.find(m=>m[0]===mode)?.[1]||''})`}
+              onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}}/>
+            <button className="send-btn" onClick={send} disabled={loading||!chatInput.trim()}>
+              {loading?<div className="spinner"/>:'→'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1104,28 +1239,40 @@ function App() {
 
   const onSend = async (message, mode) => {
     if (!apiKey) { setShowAPI(true); return; }
-
     const userMsg = { role:'user', content:message, ts:Date.now() };
     const withUser = [...history, userMsg];
     const placeholder = { role:'ai', content:'', ts:Date.now() };
     setHistory([...withUser, placeholder]);
     setLoading(true);
-
     const apiMsgs = withUser.slice(-22).map(m => ({
       role: m.role === 'ai' ? 'assistant' : 'user',
       content: m.content,
     }));
-
     try {
-      await callClaude(apiKey, apiMsgs, story, codex, locked, mode, text => {
+      const result = await callClaude(apiKey, apiMsgs, story, codex, locked, mode, text => {
         setHistory(prev => {
           const u = [...prev];
           u[u.length-1] = { role:'ai', content:text, ts:Date.now() };
           return u;
         });
       });
+      const finalText = result.hitMaxTokens ? trimToSentence(result.text) : result.text;
+      if (result.hitMaxTokens) {
+        setHistory(prev => {
+          const u = [...prev];
+          u[u.length-1] = { ...u[u.length-1], content: finalText };
+          return u;
+        });
+      }
+      if (mode === 'writer') {
+        setStory(prev => {
+          const sep = prev.trim() && !prev.endsWith('\n') ? '\n\n' : '';
+          return prev + sep + finalText;
+        });
+        toast$('✓ Beillesztve a szövegbe', true);
+      }
     } catch(e) {
-      setHistory(withUser); // remove placeholder
+      setHistory(withUser);
       toast$(`API hiba: ${e.message}`);
     } finally {
       setLoading(false);
