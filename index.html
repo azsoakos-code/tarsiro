@@ -1238,6 +1238,7 @@ function App() {
   const [codex,    setCodex]   = useState({ characters:[], locations:[], lore:[] });
   const [chapters, setChapters]= useState([]);
   const [locked,   setLocked]  = useState([]);
+  const importRef = useRef(null);
 
   // Persist auto-save
   useEffect(() => {
@@ -1272,6 +1273,36 @@ function App() {
   const addLock = text => {
     setLocked(p => [...p, { id:uid(), text, createdAt:Date.now() }]);
     toast$(`🔒 Zárolva`, true);
+  };
+
+  const doExport = () => {
+    const data = JSON.stringify({ history, codex, chapters, locked }, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tarsiro-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast$('Adatok exportálva!', true);
+  };
+
+  const doImport = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (d.history)  setHistory(d.history);
+        if (d.codex)    setCodex(d.codex);
+        if (d.chapters) setChapters(d.chapters);
+        if (d.locked)   setLocked(d.locked);
+        toast$('Adatok betöltve! ✓', true);
+      } catch { toast$('Érvénytelen fájl!'); }
+      e.target.value = '';
+    };
+    reader.readAsText(file);
   };
 
   function storyFromHistory(hist) {
@@ -1330,6 +1361,9 @@ function App() {
           <button className="refresh-btn" onClick={() => window.location.reload(true)}>
             <span className="refresh-ico">↻</span> Frissítés
           </button>
+          <button className="btn btn-ghost" onClick={doExport} title="Adatok mentése fájlba">📤 Export</button>
+          <button className="btn btn-ghost" onClick={() => importRef.current?.click()} title="Adatok betöltése fájlból">📥 Import</button>
+          <input ref={importRef} type="file" accept=".json" style={{display:'none'}} onChange={doImport}/>
           {locked.length > 0 && (
             <span style={{fontSize:10,color:'var(--gold)',opacity:.8,letterSpacing:'.06em'}}>
               🔒 {locked.length}
