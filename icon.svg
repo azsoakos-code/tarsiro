@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="90" fill="#141008"/>
+  <rect x="36" y="36" width="440" height="440" rx="70" fill="none" stroke="#2e2318" stroke-width="3"/>
+  <text x="256" y="370" font-family="Georgia, serif" font-size="330" font-weight="normal"
+        text-anchor="middle" fill="#d4a843">T</text>
+  <text x="256" y="440" font-family="Georgia, serif" font-size="42" letter-spacing="8"
+        text-anchor="middle" fill="#8a6828">TÁRSÍRÓ</text>
+</svg>

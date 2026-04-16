@@ -1,0 +1,19 @@
+{
+  "name": "Társíró – AI Történetíró",
+  "short_name": "Társíró",
+  "description": "AI segítséggel írj történeteket",
+  "start_url": "/tarsiro/",
+  "scope": "/tarsiro/",
+  "display": "standalone",
+  "background_color": "#0e0b07",
+  "theme_color": "#d4a843",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

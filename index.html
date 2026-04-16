@@ -2,8 +2,13 @@
 <html lang="hu">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Társíró — AI Történetíró</title>
+  <meta name="theme-color" content="#d4a843">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Társíró">
+  <link rel="manifest" href="manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Cinzel:wght@400;600&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -398,6 +403,62 @@
     .lock-item-date { font-size: 9px; color: var(--muted); margin-top: 3px; }
     .lock-rm { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 2px; }
     .lock-rm:hover { color: var(--redt); }
+
+    /* ── Mobile ── */
+    @supports (height: 100dvh) { .app { height: 100dvh; } }
+
+    @media (max-width: 640px) {
+      .app { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+      /* Header wraps on mobile */
+      .header {
+        height: auto; min-height: 46px;
+        flex-wrap: wrap; padding: 5px 8px; gap: 3px 6px;
+      }
+      .logo { font-size: 13px; flex-shrink: 0; }
+      .logo em { display: none; }
+      /* Tabs go to their own full-width row */
+      .tabs { order: 3; width: 100%; gap: 2px; }
+      .tab { flex: 1; text-align: center; padding: 5px 4px; font-size: 11px; letter-spacing: .03em; }
+      .hdr-right { margin-left: auto; gap: 4px; }
+      .refresh-btn { display: none; }
+      .btn { padding: 5px 8px; font-size: 10px; }
+
+      /* Hide verbose status bar */
+      .status { display: none; }
+
+      /* Chat messages area */
+      .chat-msgs { padding: 10px; gap: 10px; }
+      .msg.ai .bubble { font-size: 14px; line-height: 1.7; padding: 10px 12px; }
+      .msg.user .bubble { font-size: 12px; max-width: 85%; }
+
+      /* Quick action buttons */
+      .quick-bar { padding: 6px; gap: 4px; }
+      .qbtn { padding: 6px 10px; font-size: 11px; }
+
+      /* Mode selector */
+      .mode-row { flex-wrap: wrap; gap: 4px; }
+      .mbtn { padding: 6px 10px; font-size: 11px; flex: 1; text-align: center; min-width: 70px; }
+
+      /* Text input — 16px prevents iOS auto-zoom */
+      .chat-input-area { padding: 8px; gap: 6px; }
+      .chat-in { font-size: 16px; line-height: 1.45; }
+      .send-btn { width: 42px; height: 42px; font-size: 18px; flex-shrink: 0; }
+      .mic-btn { width: 36px; height: 36px; font-size: 17px; }
+
+      /* Codex on mobile */
+      .codex-bar { flex-wrap: wrap; height: auto; padding: 8px 10px; gap: 5px; }
+      .codex-grid { padding: 10px; gap: 10px;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+
+      /* Chapters on mobile */
+      .ch-bar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 5px; }
+      .ch-head { padding: 12px; }
+      .ch-meta { display: none; }
+
+      /* Modals */
+      .modal { padding: 20px 16px; max-width: 95vw; }
+    }
   </style>
 </head>
 <body>
