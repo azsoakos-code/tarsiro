@@ -881,130 +881,102 @@ function MicButton({ onFinal, onInterim, onError }) {
 // ─────────────────────────────────────────────
 // EDITOR TAB
 // ─────────────────────────────────────────────
-function EditorTab({ story, setStory, history, onSend, loading, codex, locked, onLockAdd, onToast, lastInserted }) {
-  const areaRef    = useRef(null);
-  const chatInRef  = useRef(null);
-  const respRef    = useRef(null);
-  const [interim,   setInterim]   = useState('');
-  const [chatInput, setChatInput] = useState('');
-  const [mode,      setMode]      = useState('writer');
-  const [showHist,  setShowHist]  = useState(false);
-
-  const insertIntoStory = (text, atEnd=false) => {
-    const el = areaRef.current;
-    if (!el) { setStory(prev => prev + text); return; }
-    const pos = atEnd ? el.value.length : (el.selectionStart ?? el.value.length);
-    const end = atEnd ? el.value.length : (el.selectionEnd ?? el.value.length);
-    const sep = (pos > 0 && el.value[pos-1] !== '\n') ? '\n\n' : '';
-    const nv  = el.value.slice(0, pos) + sep + text + el.value.slice(end);
-    setStory(nv);
-    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = pos + sep.length + text.length; el.focus(); });
-  };
+function EditorTab({ history, onSend, loading, locked, onLockAdd, onToast }) {
+  const [input,   setInput]   = useState('');
+  const [mode,    setMode]    = useState('writer');
+  const [interim, setInterim] = useState('');
+  const endRef = useRef(null);
+  const inRef  = useRef(null);
 
   const insertIntoChat = (text) => {
-    const el = chatInRef.current;
-    if (!el) { setChatInput(prev => prev + text); return; }
+    const el = inRef.current;
+    if (!el) { setInput(prev => prev + text); return; }
     const s = el.selectionStart ?? el.value.length;
     const e = el.selectionEnd ?? el.value.length;
     const nv = el.value.slice(0, s) + text + ' ' + el.value.slice(e);
-    setChatInput(nv);
+    setInput(nv);
     requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = s + text.length + 1; el.focus(); });
   };
 
-  const lastAI = history.length > 0 && history[history.length-1].role === 'ai' ? history[history.length-1] : null;
-
-  useEffect(() => {
-    if (respRef.current) respRef.current.scrollTop = respRef.current.scrollHeight;
-  }, [lastAI?.content, loading]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [history, loading]);
 
   const send = () => {
-    if (!chatInput.trim() || loading) return;
-    onSend(chatInput.trim(), mode);
-    setChatInput('');
+    if (!input.trim() || loading) return;
+    onSend(input.trim(), mode);
+    setInput('');
   };
 
   const quick = [
-    { l:'Merre vigyük?',  m:'Adj 3 konkrét irányvonalat ahol most tart a történet.', qmode:'brainstorm' },
-    { l:'Írj tovább',     m:'Írj tovább a szöveghez — maradj az eddigi hangnemben és tempóban.', qmode:'writer' },
-    { l:'Párbeszéd',      m:'Írj egy párbeszédet ami illik a jelenlegi szituációhoz.', qmode:'writer' },
-    { l:'Ellenőrzés',     m:'Ellenőrizd a szöveget logikai hibákért, ellentmondásokért.', qmode:'edit' },
-    { l:'Referencia',     m:'Melyik nagy műre hasonlít leginkább az eddigi szöveg?', qmode:'reference' },
-    { l:'Kérdezz rám',   m:'Ne írj semmit — csak kérdezz rám a történettel kapcsolatban.', qmode:'brainstorm' },
+    { l:'Merre vigyük?',  m:'Adj 3 konkrét irányvonalat ahol most tart a történet.',            qmode:'brainstorm' },
+    { l:'Írj tovább',     m:'Írj tovább a történeten — maradj az eddigi hangnemben és tempóban.', qmode:'writer' },
+    { l:'Párbeszéd',      m:'Írj egy párbeszédet ami illik a jelenlegi szituációhoz.',             qmode:'writer' },
+    { l:'Ellenőrzés',     m:'Ellenőrizd az eddigieket logikai hibákért, ellentmondásokért.',       qmode:'edit' },
+    { l:'Referencia',     m:'Melyik nagy műre hasonlít leginkább az eddigi történet és milyen technikákat vehetünk át?', qmode:'reference' },
+    { l:'Kérdezz rám',   m:'Ne írj semmit — csak kérdezz rám a történettel kapcsolatban.',        qmode:'brainstorm' },
   ];
+
   const modes = [['writer','✍ Ír'],['brainstorm','💡 Ötlet'],['edit','✏ Szerkeszt'],['reference','📚 Ref']];
 
-  const showResp = !!(lastAI || loading);
-
   return (
-    <div className="editor-unified">
-      <div className="story-wrap">
-        {interim && <div className="interim-bar">🎙 {interim}</div>}
-        <div className="panel-hdr">
-          <span className="ph-label">Szöveg</span>
-          <MicButton onFinal={insertIntoStory} onInterim={setInterim} onError={msg=>onToast(msg)}/>
-          <span style={{marginLeft:'auto',fontSize:9,color:'var(--muted)'}}>{words(story).toLocaleString('hu-HU')} szó</span>
-        </div>
-        <textarea ref={areaRef} className="story-area" value={story} onChange={e=>setStory(e.target.value)}
-          spellCheck={false} placeholder="Kezdd el írni a történetedet… Az AI látja minden szavadat és ahhoz igazodik."/>
+    <div style={{height:'100%', display:'flex', flexDirection:'column', background:'var(--bg)'}}>
+      <div className="chat-msgs">
+        {history.length === 0 && (
+          <div className="empty" style={{gridColumn:'unset', padding:'60px 24px'}}>
+            <div className="empty-ico">✍️</div>
+            <div className="empty-txt">
+              Üdv a Társíróban.<br/>
+              <span style={{color:'var(--gold)',opacity:.7}}>Kezdj el írni, ötletelni, vagy kérj valamit az AI-tól.</span>
+            </div>
+          </div>
+        )}
+        {history.map((m, i) => (
+          <div key={i} className={`msg ${m.role}`}>
+            <div className="bubble">
+              {m.role === 'ai' && !m.content
+                ? <div className="typing-dots"><span/><span/><span/></div>
+                : m.content}
+            </div>
+            <div className="msg-meta">
+              <span className="msg-time">{hhmm(m.ts)}</span>
+              {m.role === 'ai' && m.content && (
+                <button className="msg-lock" onClick={() => onLockAdd(m.content.slice(0,120) + (m.content.length>120?'…':''))}>
+                  🔒 zárol
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        <div ref={endRef}/>
       </div>
 
-      {showResp && (
-        <div className="ai-response-panel">
-          <div className="ai-resp-hdr">
-            <div className={`ai-dot ${loading ? 'pulse' : ''}`}/>
-            <span style={{fontSize:10,color:'var(--dim)',letterSpacing:'.1em',textTransform:'uppercase'}}>Társíró AI</span>
-            {lastAI?.content && (
-              <>
-                <button className="insert-btn" onClick={()=>{ insertIntoStory(lastAI.content, true); onToast('✓ Beillesztve',true); }}>↩ Beillesztés</button>
-                <button className="msg-lock" style={{opacity:1}} onClick={()=>onLockAdd(lastAI.content.slice(0,120)+(lastAI.content.length>120?'…':''))}>🔒 zárol</button>
-              </>
-            )}
-            <button style={{marginLeft:'auto',background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:11,padding:'0 4px'}}
-              onClick={()=>setShowHist(h=>!h)}>{showHist?'▼ Utolsó':'▲ Előzmény'}</button>
-          </div>
-          {showHist ? (
-            <div className="ai-hist-scroll">
-              {history.map((m,i) => (
-                <div key={i} className={`msg ${m.role}`}>
-                  <div className="bubble" style={{fontSize:12}}>{m.role==='ai'&&!m.content?<div className="typing-dots"><span/><span/><span/></div>:m.content}</div>
-                  <div className="msg-meta"><span className="msg-time">{hhmm(m.ts)}</span></div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="ai-resp-body" ref={respRef}>
-              {loading && !(lastAI?.content) ? (
-                <div className="typing-dots"><span/><span/><span/></div>
-              ) : (lastAI?.content || '')}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="command-bar">
-        <div className="quick-bar" style={{borderBottom:'none',borderTop:'1px solid var(--border)'}}>
-          {quick.map((q,i)=>(
+      <div className="chat-input-area">
+        <div className="quick-bar" style={{padding:'6px 0', border:'none'}}>
+          {quick.map((q,i) => (
             <button key={i} className="qbtn" disabled={loading}
-              onClick={()=>{ setMode(q.qmode||mode); onSend(q.m, q.qmode||mode); }}>{q.l}</button>
+              onClick={() => { setMode(q.qmode); onSend(q.m, q.qmode); }}>
+              {q.l}
+            </button>
           ))}
         </div>
-        <div className="cmd-row">
-          <div className="mode-row">
-            {modes.map(([k,v])=>(
-              <button key={k} className={`mbtn ${mode===k?'on':''}`} onClick={()=>setMode(k)}>{v}</button>
-            ))}
-          </div>
-          {interim && <div className="interim-chat">🎙 {interim}</div>}
-          <div className="input-row">
-            <MicButton onFinal={insertIntoChat} onInterim={setInterim} onError={msg=>onToast(msg)}/>
-            <textarea ref={chatInRef} className="chat-in" rows={2} value={chatInput}
-              onChange={e=>setChatInput(e.target.value)} disabled={loading}
-              placeholder={`Írj a Társírónak… (${modes.find(m=>m[0]===mode)?.[1]||''})`}
-              onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}}/>
-            <button className="send-btn" onClick={send} disabled={loading||!chatInput.trim()}>
-              {loading?<div className="spinner"/>:'→'}
-            </button>
-          </div>
+        <div className="mode-row">
+          {modes.map(([k,v]) => (
+            <button key={k} className={`mbtn ${mode===k?'on':''}`} onClick={() => setMode(k)}>{v}</button>
+          ))}
+        </div>
+        {interim && <div className="interim-chat">🎙 {interim}</div>}
+        <div className="input-row">
+          <MicButton
+            onFinal={insertIntoChat}
+            onInterim={setInterim}
+            onError={msg => onToast(msg)}
+          />
+          <textarea ref={inRef} className="chat-in" rows={2} value={input}
+            onChange={e => setInput(e.target.value)} disabled={loading}
+            placeholder={`Írj a Társírónak… (${modes.find(m=>m[0]===mode)?.[1]||''})`}
+            onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}/>
+          <button className="send-btn" onClick={send} disabled={loading || !input.trim()}>
+            {loading ? <div className="spinner"/> : '→'}
+          </button>
         </div>
       </div>
     </div>
@@ -1195,7 +1167,6 @@ function App() {
   const [showAPI,  setShowAPI] = useState(false);
   const [showLock, setShowLock]= useState(false);
 
-  const [story,    setStory]   = useState('');
   const [history,  setHistory] = useState([]);
   const [codex,    setCodex]   = useState({ characters:[], locations:[], lore:[] });
   const [chapters, setChapters]= useState([]);
@@ -1205,7 +1176,6 @@ function App() {
   useEffect(() => {
     const d = load();
     if (d) {
-      setStory(d.story || '');
       setHistory(d.history || []);
       setCodex(d.codex || { characters:[], locations:[], lore:[] });
       setChapters(d.chapters || []);
@@ -1217,8 +1187,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    save({ story, history, codex, chapters, locked });
-  }, [story, history, codex, chapters, locked]);
+    save({ history, codex, chapters, locked });
+  }, [history, codex, chapters, locked]);
 
   const toast$ = (msg, ok=false) => {
     setToast({ msg, ok });
@@ -1237,6 +1207,11 @@ function App() {
     toast$(`🔒 Zárolva`, true);
   };
 
+  function storyFromHistory(hist) {
+    return hist.filter(m => m.role === 'ai' && m.content)
+      .map(m => m.content).join('\n\n').slice(-3000);
+  }
+
   const onSend = async (message, mode) => {
     if (!apiKey) { setShowAPI(true); return; }
     const userMsg = { role:'user', content:message, ts:Date.now() };
@@ -1249,7 +1224,7 @@ function App() {
       content: m.content,
     }));
     try {
-      const result = await callClaude(apiKey, apiMsgs, story, codex, locked, mode, text => {
+      const result = await callClaude(apiKey, apiMsgs, storyFromHistory(withUser), codex, locked, mode, text => {
         setHistory(prev => {
           const u = [...prev];
           u[u.length-1] = { role:'ai', content:text, ts:Date.now() };
@@ -1263,13 +1238,6 @@ function App() {
           u[u.length-1] = { ...u[u.length-1], content: finalText };
           return u;
         });
-      }
-      if (mode === 'writer') {
-        setStory(prev => {
-          const sep = prev.trim() && !prev.endsWith('\n') ? '\n\n' : '';
-          return prev + sep + finalText;
-        });
-        toast$('✓ Beillesztve a szövegbe', true);
       }
     } catch(e) {
       setHistory(withUser);
@@ -1311,14 +1279,14 @@ function App() {
       {/* Content */}
       <main className="content">
         {tab === 'editor' && (
-          <EditorTab story={story} setStory={setStory} history={history}
-            onSend={onSend} loading={loading} codex={codex} locked={locked} onLockAdd={addLock} onToast={toast$}/>
+          <EditorTab history={history}
+            onSend={onSend} loading={loading} locked={locked} onLockAdd={addLock} onToast={toast$}/>
         )}
         {tab === 'codex' && (
           <CodexTab codex={codex} setCodex={setCodex} locked={locked} setLocked={setLocked}/>
         )}
         {tab === 'chapters' && (
-          <ChaptersTab chapters={chapters} setChapters={setChapters} story={story}/>
+          <ChaptersTab chapters={chapters} setChapters={setChapters} story=""/>
         )}
       </main>
 
@@ -1326,7 +1294,7 @@ function App() {
       <div className="status">
         <span>TÁRSÍRÓ v1.0</span>
         <span>·</span>
-        <span>{words(story).toLocaleString('hu-HU')} szó</span>
+        <span>{words(history.filter(m=>m.role==='ai').map(m=>m.content).join(' ')).toLocaleString('hu-HU')} szó</span>
         <span>·</span>
         <span>{chapters.length} fejezet</span>
         <span>·</span>
