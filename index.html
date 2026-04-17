@@ -472,8 +472,9 @@ const { useState, useEffect, useRef, useCallback } = React;
 // ─────────────────────────────────────────────
 const STORE_KEY  = 'tarsiro_v1';
 const KEY_KEY    = 'tarsiro_apikey';
-const MODEL      = 'claude-sonnet-4-5';
-const MAX_TOKENS = 4096;
+const MODEL        = 'claude-sonnet-4-5';
+const GEMINI_MODEL = 'gemini-2.0-flash';
+const MAX_TOKENS   = 4096;
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -610,6 +611,54 @@ function trimToSentence(text) {
 }
 
 // ─────────────────────────────────────────────
+// GEMINI API
+// ─────────────────────────────────────────────
+async function callGemini(apiKey, apiMsgs, storyText, codex, locked, mode, onChunk) {
+  const sys = buildSys(storyText, codex, locked, mode);
+  const contents = apiMsgs.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }]
+  }));
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: sys }] },
+      contents,
+      generationConfig: { maxOutputTokens: MAX_TOKENS, temperature: 0.9 }
+    })
+  });
+
+  if (!resp.ok) {
+    const e = await resp.json().catch(() => ({}));
+    throw new Error(e.error?.message || `HTTP ${resp.status}`);
+  }
+
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let full = '';
+  let hitMaxTokens = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    for (const line of dec.decode(value, { stream: true }).split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      const d = line.slice(6).trim();
+      try {
+        const j = JSON.parse(d);
+        const text = j.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) { full += text; onChunk(full); }
+        if (j.candidates?.[0]?.finishReason === 'MAX_TOKENS') hitMaxTokens = true;
+      } catch {}
+    }
+  }
+  return { text: full, hitMaxTokens };
+}
+
+// ─────────────────────────────────────────────
 // EXPORTS
 // ─────────────────────────────────────────────
 function exportPDF(chapter) {
@@ -659,21 +708,58 @@ function Toast({ msg, ok, onDone }) {
 // ─────────────────────────────────────────────
 // MODALS
 // ─────────────────────────────────────────────
-function APIModal({ apiKey, onSave, onClose }) {
-  const [v, setV] = useState(apiKey || '');
+function SettingsModal({ provider, apiKey, geminiKey, onSave, onClose }) {
+  const [prov, setProv] = useState(provider || 'claude');
+  const [cKey, setCKey] = useState(apiKey || '');
+  const [gKey, setGKey] = useState(geminiKey || '');
+  const activeKey = prov === 'gemini' ? gKey.trim() : cKey.trim();
+
+  const save = () => onSave({ provider: prov, apiKey: cKey, geminiKey: gKey });
+
   return (
     <div className="overlay" onClick={e => e.target===e.currentTarget && onClose()}>
       <div className="modal">
-        <div className="modal-title">API Kulcs Beállítása</div>
+        <div className="modal-title">⚙ Beállítások</div>
+
         <div className="fg">
-          <label className="fl">Anthropic API Kulcs</label>
-          <input className="fi" type="password" value={v} onChange={e=>setV(e.target.value)}
-            placeholder="sk-ant-..." autoFocus onKeyDown={e=>e.key==='Enter'&&v.trim()&&onSave(v.trim())}/>
-          <div className="fi-note">A kulcs csak a böngésződben tárolódik (localStorage). Szükséges: {MODEL} hozzáférés.</div>
+          <label className="fl">AI Motor</label>
+          <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+            <button className={`btn ${prov==='claude'?'btn-gold':'btn-ghost'}`}
+              style={{flex:1}} onClick={()=>setProv('claude')}>
+              🔴 Claude — legjobb (fizetős)
+            </button>
+            <button className={`btn ${prov==='gemini'?'btn-gold':'btn-ghost'}`}
+              style={{flex:1}} onClick={()=>setProv('gemini')}>
+              🟢 Gemini — ingyenes
+            </button>
+          </div>
         </div>
+
+        {prov === 'claude' ? (
+          <div className="fg">
+            <label className="fl">Anthropic API Kulcs</label>
+            <input className="fi" type="password" value={cKey} onChange={e=>setCKey(e.target.value)}
+              placeholder="sk-ant-..." autoFocus onKeyDown={e=>e.key==='Enter'&&activeKey&&save()}/>
+            <div className="fi-note">
+              Kulcs + kredit: <a href="https://console.anthropic.com/settings/keys" target="_blank"
+                style={{color:'var(--gold)'}}>console.anthropic.com</a>
+            </div>
+          </div>
+        ) : (
+          <div className="fg">
+            <label className="fl">Google Gemini API Kulcs</label>
+            <input className="fi" type="password" value={gKey} onChange={e=>setGKey(e.target.value)}
+              placeholder="AIza..." autoFocus onKeyDown={e=>e.key==='Enter'&&activeKey&&save()}/>
+            <div className="fi-note">
+              Ingyenes kulcs (Google fiókkal): <a href="https://aistudio.google.com/app/apikey" target="_blank"
+                style={{color:'var(--gold)'}}>aistudio.google.com</a> → Get API key
+            </div>
+          </div>
+        )}
+
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>Mégse</button>
-          <button className="btn btn-gold" onClick={()=>v.trim()&&onSave(v.trim())} disabled={!v.trim()}>Mentés</button>
+          <button className="btn btn-gold" disabled={!activeKey} onClick={save}>Mentés</button>
         </div>
       </div>
     </div>
@@ -1229,6 +1315,8 @@ function ChaptersTab({ chapters, setChapters, story }) {
 function App() {
   const [tab,      setTab]     = useState('editor');
   const [apiKey,   setApiKey]  = useState('');
+  const [geminiKey,setGeminiKey]= useState('');
+  const [provider, setProvider]= useState('claude');
   const [loading,  setLoading] = useState(false);
   const [toast,    setToast]   = useState(null);
   const [showAPI,  setShowAPI] = useState(false);
@@ -1249,9 +1337,14 @@ function App() {
       setChapters(d.chapters || []);
       setLocked(d.locked || []);
     }
-    const key = localStorage.getItem(KEY_KEY);
-    if (key) setApiKey(key);
-    else setShowAPI(true);
+    const prov = localStorage.getItem('tarsiro_provider') || 'claude';
+    const ckey = localStorage.getItem(KEY_KEY) || '';
+    const gkey = localStorage.getItem('tarsiro_geminikey') || '';
+    setProvider(prov);
+    if (ckey) setApiKey(ckey);
+    if (gkey) setGeminiKey(gkey);
+    const activeKey = prov === 'gemini' ? gkey : ckey;
+    if (!activeKey) setShowAPI(true);
   }, []);
 
   useEffect(() => {
@@ -1263,11 +1356,13 @@ function App() {
     setTimeout(() => setToast(null), 3400);
   };
 
-  const saveKey = key => {
-    setApiKey(key);
-    localStorage.setItem(KEY_KEY, key);
+  const saveSettings = ({ provider: prov, apiKey: akey, geminiKey: gkey }) => {
+    setProvider(prov);
+    localStorage.setItem('tarsiro_provider', prov);
+    if (akey.trim()) { setApiKey(akey.trim()); localStorage.setItem(KEY_KEY, akey.trim()); }
+    if (gkey.trim()) { setGeminiKey(gkey.trim()); localStorage.setItem('tarsiro_geminikey', gkey.trim()); }
     setShowAPI(false);
-    toast$('API kulcs elmentve!', true);
+    toast$(prov === 'gemini' ? '🟢 Gemini beállítva!' : '🔴 Claude beállítva!', true);
   };
 
   const addLock = text => {
@@ -1311,7 +1406,8 @@ function App() {
   }
 
   const onSend = async (message, mode) => {
-    if (!apiKey) { setShowAPI(true); return; }
+    const activeKey = provider === 'gemini' ? geminiKey : apiKey;
+    if (!activeKey) { setShowAPI(true); return; }
     const userMsg = { role:'user', content:message, ts:Date.now() };
     const withUser = [...history, userMsg];
     const placeholder = { role:'ai', content:'', ts:Date.now() };
@@ -1321,8 +1417,9 @@ function App() {
       role: m.role === 'ai' ? 'assistant' : 'user',
       content: m.content,
     }));
+    const callFn = provider === 'gemini' ? callGemini : callClaude;
     try {
-      const result = await callClaude(apiKey, apiMsgs, storyFromHistory(withUser), codex, locked, mode, text => {
+      const result = await callFn(activeKey, apiMsgs, storyFromHistory(withUser), codex, locked, mode, text => {
         setHistory(prev => {
           const u = [...prev];
           u[u.length-1] = { role:'ai', content:text, ts:Date.now() };
@@ -1370,9 +1467,11 @@ function App() {
             </span>
           )}
           <button className="btn btn-ghost" onClick={()=>setShowLock(true)}>🔒 Zárolás</button>
-          <button className="btn btn-ghost" title={apiKey?'API kulcs beállítva':'API kulcs hiányzik'}
-            onClick={()=>setShowAPI(true)} style={!apiKey?{borderColor:'#8b4a1a',color:'#e09050'}:{}}>
-            {apiKey ? '⚙ Beállítások' : '⚠ API kulcs'}
+          <button className="btn btn-ghost" onClick={()=>setShowAPI(true)}
+            style={!(provider==='gemini'?geminiKey:apiKey)?{borderColor:'#8b4a1a',color:'#e09050'}:{}}>
+            {provider==='gemini'
+              ? (geminiKey ? '🟢 Gemini' : '⚠ API kulcs')
+              : (apiKey    ? '🔴 Claude' : '⚠ API kulcs')}
           </button>
         </div>
       </header>
@@ -1409,7 +1508,7 @@ function App() {
       </div>
 
       {/* Modals */}
-      {showAPI  && <APIModal  apiKey={apiKey} onSave={saveKey} onClose={()=>setShowAPI(false)}/>}
+      {showAPI  && <SettingsModal provider={provider} apiKey={apiKey} geminiKey={geminiKey} onSave={saveSettings} onClose={()=>setShowAPI(false)}/>}
       {showLock && <LockModal onLock={t=>{ addLock(t); setShowLock(false); }} onClose={()=>setShowLock(false)}/>}
 
       {/* Toast */}
