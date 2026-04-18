@@ -473,7 +473,8 @@ const { useState, useEffect, useRef, useCallback } = React;
 const STORE_KEY  = 'tarsiro_v1';
 const KEY_KEY    = 'tarsiro_apikey';
 const MODEL        = 'claude-sonnet-4-5';
-const GEMINI_MODEL = 'gemini-1.5-flash';
+const GEMINI_MODEL = 'gemini-2.0-flash';
+const GROQ_MODEL   = 'llama-3.3-70b-versatile';
 const MAX_TOKENS   = 4096;
 
 // ─────────────────────────────────────────────
@@ -659,6 +660,53 @@ async function callGemini(apiKey, apiMsgs, storyText, codex, locked, mode, onChu
 }
 
 // ─────────────────────────────────────────────
+// GROQ API (ingyenes, Llama 3.3)
+// ─────────────────────────────────────────────
+async function callGroq(apiKey, apiMsgs, storyText, codex, locked, mode, onChunk) {
+  const sys = buildSys(storyText, codex, locked, mode);
+  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      max_tokens: MAX_TOKENS,
+      stream: true,
+      messages: [{ role: 'system', content: sys }, ...apiMsgs],
+    }),
+  });
+
+  if (!resp.ok) {
+    const e = await resp.json().catch(() => ({}));
+    throw new Error(e.error?.message || `HTTP ${resp.status}`);
+  }
+
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let full = '';
+  let hitMaxTokens = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    for (const line of dec.decode(value, { stream: true }).split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      const d = line.slice(6).trim();
+      if (d === '[DONE]') continue;
+      try {
+        const j = JSON.parse(d);
+        const text = j.choices?.[0]?.delta?.content;
+        if (text) { full += text; onChunk(full); }
+        if (j.choices?.[0]?.finish_reason === 'length') hitMaxTokens = true;
+      } catch {}
+    }
+  }
+  return { text: full, hitMaxTokens };
+}
+
+// ─────────────────────────────────────────────
 // EXPORTS
 // ─────────────────────────────────────────────
 function exportPDF(chapter) {
@@ -708,13 +756,13 @@ function Toast({ msg, ok, onDone }) {
 // ─────────────────────────────────────────────
 // MODALS
 // ─────────────────────────────────────────────
-function SettingsModal({ provider, apiKey, geminiKey, onSave, onClose }) {
-  const [prov, setProv] = useState(provider || 'claude');
+function SettingsModal({ provider, apiKey, geminiKey, groqKey, onSave, onClose }) {
+  const [prov, setProv] = useState(provider || 'groq');
   const [cKey, setCKey] = useState(apiKey || '');
   const [gKey, setGKey] = useState(geminiKey || '');
-  const activeKey = prov === 'gemini' ? gKey.trim() : cKey.trim();
-
-  const save = () => onSave({ provider: prov, apiKey: cKey, geminiKey: gKey });
+  const [rKey, setRKey] = useState(groqKey || '');
+  const activeKey = (prov==='claude'?cKey:prov==='gemini'?gKey:rKey).trim();
+  const save = () => onSave({ provider: prov, apiKey: cKey, geminiKey: gKey, groqKey: rKey });
 
   return (
     <div className="overlay" onClick={e => e.target===e.currentTarget && onClose()}>
@@ -724,6 +772,10 @@ function SettingsModal({ provider, apiKey, geminiKey, onSave, onClose }) {
         <div className="fg">
           <label className="fl">AI Motor</label>
           <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+            <button className={`btn ${prov==='groq'?'btn-gold':'btn-ghost'}`}
+              style={{flex:1}} onClick={()=>setProv('groq')}>
+              🟣 Groq — ingyenes ✨
+            </button>
             <button className={`btn ${prov==='claude'?'btn-gold':'btn-ghost'}`}
               style={{flex:1}} onClick={()=>setProv('claude')}>
               🔴 Claude — legjobb (fizetős)
@@ -735,7 +787,20 @@ function SettingsModal({ provider, apiKey, geminiKey, onSave, onClose }) {
           </div>
         </div>
 
-        {prov === 'claude' ? (
+        {prov === 'groq' && (
+          <div className="fg">
+            <label className="fl">Groq API Kulcs — Teljesen ingyenes!</label>
+            <input className="fi" type="password" value={rKey} onChange={e=>setRKey(e.target.value)}
+              placeholder="gsk_..." autoFocus onKeyDown={e=>e.key==='Enter'&&activeKey&&save()}/>
+            <div className="fi-note">
+              Ingyenes kulcs (Google/GitHub fiókkal, 1 perc):{' '}
+              <a href="https://console.groq.com/keys" target="_blank" style={{color:'var(--gold)'}}>
+                console.groq.com
+              </a> → Create API Key
+            </div>
+          </div>
+        )}
+        {prov === 'claude' && (
           <div className="fg">
             <label className="fl">Anthropic API Kulcs</label>
             <input className="fi" type="password" value={cKey} onChange={e=>setCKey(e.target.value)}
@@ -745,13 +810,14 @@ function SettingsModal({ provider, apiKey, geminiKey, onSave, onClose }) {
                 style={{color:'var(--gold)'}}>console.anthropic.com</a>
             </div>
           </div>
-        ) : (
+        )}
+        {prov === 'gemini' && (
           <div className="fg">
             <label className="fl">Google Gemini API Kulcs</label>
             <input className="fi" type="password" value={gKey} onChange={e=>setGKey(e.target.value)}
               placeholder="AIza..." autoFocus onKeyDown={e=>e.key==='Enter'&&activeKey&&save()}/>
             <div className="fi-note">
-              Ingyenes kulcs (Google fiókkal): <a href="https://aistudio.google.com/app/apikey" target="_blank"
+              Ingyenes kulcs: <a href="https://aistudio.google.com/app/apikey" target="_blank"
                 style={{color:'var(--gold)'}}>aistudio.google.com</a> → Get API key
             </div>
           </div>
@@ -1314,9 +1380,10 @@ function ChaptersTab({ chapters, setChapters, story }) {
 // ─────────────────────────────────────────────
 function App() {
   const [tab,      setTab]     = useState('editor');
-  const [apiKey,   setApiKey]  = useState('');
+  const [apiKey,   setApiKey]   = useState('');
   const [geminiKey,setGeminiKey]= useState('');
-  const [provider, setProvider]= useState('claude');
+  const [groqKey,  setGroqKey]  = useState('');
+  const [provider, setProvider] = useState('groq');
   const [loading,  setLoading] = useState(false);
   const [toast,    setToast]   = useState(null);
   const [showAPI,  setShowAPI] = useState(false);
@@ -1337,13 +1404,15 @@ function App() {
       setChapters(d.chapters || []);
       setLocked(d.locked || []);
     }
-    const prov = localStorage.getItem('tarsiro_provider') || 'claude';
+    const prov = localStorage.getItem('tarsiro_provider') || 'groq';
     const ckey = localStorage.getItem(KEY_KEY) || '';
     const gkey = localStorage.getItem('tarsiro_geminikey') || '';
+    const rkey = localStorage.getItem('tarsiro_groqkey') || '';
     setProvider(prov);
     if (ckey) setApiKey(ckey);
     if (gkey) setGeminiKey(gkey);
-    const activeKey = prov === 'gemini' ? gkey : ckey;
+    if (rkey) setGroqKey(rkey);
+    const activeKey = prov==='gemini' ? gkey : prov==='groq' ? rkey : ckey;
     if (!activeKey) setShowAPI(true);
   }, []);
 
@@ -1356,13 +1425,15 @@ function App() {
     setTimeout(() => setToast(null), 3400);
   };
 
-  const saveSettings = ({ provider: prov, apiKey: akey, geminiKey: gkey }) => {
+  const saveSettings = ({ provider: prov, apiKey: akey, geminiKey: gkey, groqKey: rkey }) => {
     setProvider(prov);
     localStorage.setItem('tarsiro_provider', prov);
     if (akey.trim()) { setApiKey(akey.trim()); localStorage.setItem(KEY_KEY, akey.trim()); }
     if (gkey.trim()) { setGeminiKey(gkey.trim()); localStorage.setItem('tarsiro_geminikey', gkey.trim()); }
+    if (rkey.trim()) { setGroqKey(rkey.trim()); localStorage.setItem('tarsiro_groqkey', rkey.trim()); }
     setShowAPI(false);
-    toast$(prov === 'gemini' ? '🟢 Gemini beállítva!' : '🔴 Claude beállítva!', true);
+    const labels = { groq:'🟣 Groq beállítva!', gemini:'🟢 Gemini beállítva!', claude:'🔴 Claude beállítva!' };
+    toast$(labels[prov] || 'Beállítva!', true);
   };
 
   const addLock = text => {
@@ -1406,7 +1477,7 @@ function App() {
   }
 
   const onSend = async (message, mode) => {
-    const activeKey = provider === 'gemini' ? geminiKey : apiKey;
+    const activeKey = provider==='gemini' ? geminiKey : provider==='groq' ? groqKey : apiKey;
     if (!activeKey) { setShowAPI(true); return; }
     const userMsg = { role:'user', content:message, ts:Date.now() };
     const withUser = [...history, userMsg];
@@ -1417,7 +1488,7 @@ function App() {
       role: m.role === 'ai' ? 'assistant' : 'user',
       content: m.content,
     }));
-    const callFn = provider === 'gemini' ? callGemini : callClaude;
+    const callFn = provider==='gemini' ? callGemini : provider==='groq' ? callGroq : callClaude;
     try {
       const result = await callFn(activeKey, apiMsgs, storyFromHistory(withUser), codex, locked, mode, text => {
         setHistory(prev => {
@@ -1468,10 +1539,10 @@ function App() {
           )}
           <button className="btn btn-ghost" onClick={()=>setShowLock(true)}>🔒 Zárolás</button>
           <button className="btn btn-ghost" onClick={()=>setShowAPI(true)}
-            style={!(provider==='gemini'?geminiKey:apiKey)?{borderColor:'#8b4a1a',color:'#e09050'}:{}}>
-            {provider==='gemini'
-              ? (geminiKey ? '🟢 Gemini' : '⚠ API kulcs')
-              : (apiKey    ? '🔴 Claude' : '⚠ API kulcs')}
+            style={!(provider==='gemini'?geminiKey:provider==='groq'?groqKey:apiKey)?{borderColor:'#8b4a1a',color:'#e09050'}:{}}>
+            {provider==='groq'   ? (groqKey   ? '🟣 Groq'   : '⚠ API kulcs')
+            :provider==='gemini' ? (geminiKey ? '🟢 Gemini' : '⚠ API kulcs')
+            :                      (apiKey    ? '🔴 Claude' : '⚠ API kulcs')}
           </button>
         </div>
       </header>
@@ -1508,7 +1579,7 @@ function App() {
       </div>
 
       {/* Modals */}
-      {showAPI  && <SettingsModal provider={provider} apiKey={apiKey} geminiKey={geminiKey} onSave={saveSettings} onClose={()=>setShowAPI(false)}/>}
+      {showAPI  && <SettingsModal provider={provider} apiKey={apiKey} geminiKey={geminiKey} groqKey={groqKey} onSave={saveSettings} onClose={()=>setShowAPI(false)}/>}
       {showLock && <LockModal onLock={t=>{ addLock(t); setShowLock(false); }} onClose={()=>setShowLock(false)}/>}
 
       {/* Toast */}
