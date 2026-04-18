@@ -1484,9 +1484,11 @@ function App() {
     const placeholder = { role:'ai', content:'', ts:Date.now() };
     setHistory([...withUser, placeholder]);
     setLoading(true);
-    const apiMsgs = withUser.slice(-22).map(m => ({
+    const msgLimit = provider === 'groq' ? 8 : 22;
+    const msgMaxChars = provider === 'groq' ? 1200 : 99999;
+    const apiMsgs = withUser.slice(-msgLimit).map(m => ({
       role: m.role === 'ai' ? 'assistant' : 'user',
-      content: m.content,
+      content: m.content.length > msgMaxChars ? '…' + m.content.slice(-msgMaxChars) : m.content,
     }));
     const callFn = provider==='gemini' ? callGemini : provider==='groq' ? callGroq : callClaude;
     try {
