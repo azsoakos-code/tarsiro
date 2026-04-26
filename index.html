@@ -1240,22 +1240,45 @@ function EditCodexModal({ item, section, onSave, onClose }) {
 }
 
 function UniverseImportModal({ onImport, onClose }) {
-  const [text,    setText]    = useState('');
-  const [loading, setLoading] = useState(false);
+  const [universeUrl, setUniverseUrl] = useState('');
+  const [extraText,   setExtraText]   = useState('');
+  const [loading,     setLoading]     = useState(false);
   const doImport = async () => {
-    if (!text.trim()) return;
+    if (!universeUrl.trim()) return;
     setLoading(true);
-    const groqKey = localStorage.getItem('tarsiro_groqkey') || 'ZLIzNyd4Ryu1DJW77DWc9ywkYF3bydGWKJdrWrKQ4HfpPv67IxmB_ksg'.split('').reverse().join('');
-    const prompt = `Az alábbi szövegből olvasd ki az összes karaktert, helyszínt és lore elemet.
+    try {
+      // Oldal letöltése CORS proxyn keresztül
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(universeUrl)}`;
+      const pageResp = await fetch(proxyUrl);
+      if (!pageResp.ok) throw new Error('Nem sikerült betölteni az oldalt (' + pageResp.status + ')');
+      const html = await pageResp.text();
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      const pageText = (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+
+      const groqKey = localStorage.getItem('tarsiro_groqkey') || 'ZLIzNyd4Ryu1DJW77DWc9ywkYF3bydGWKJdrWrKQ4HfpPv67IxmB_ksg'.split('').reverse().join('');
+      const prompt = `Olvasd el ezt az oldalt: ${universeUrl}
+
+Az oldal tartalmából olvasd ki:
+
+- A főbb karaktereket (nevük, leírásuk, motivációjuk, háttérük, hogyan beszélnek/viselkednek)
+
+- A fontos helyszíneket
+
+- A lore elemeket (mágia rendszer, frakciók, különleges fogalmak)
+
+${extraText ? `Extra kontextus a felhasználótól: ${extraText}` : ''}
+
 Válaszolj KIZÁRÓLAG érvényes JSON formátumban, semmi más szöveg:
 {
   "characters": [{"name":"...","description":"...","motivation":"...","background":"...","voice":"Hogyan beszél, milyen a stílusa, mondatritmus, szóhasználat"}],
   "locations": [{"name":"...","description":"..."}],
   "lore": [{"name":"...","description":"..."}]
 }
-SZÖVEG:
-${text.slice(0, 4000)}`;
-    try {
+
+OLDAL TARTALMA:
+${pageText.slice(0, 4000)}`;
+
       const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
@@ -1276,13 +1299,20 @@ ${text.slice(0, 4000)}`;
       <div className="modal modal-wide">
         <div className="modal-title">🌍 Univerzum Import</div>
         <div className="fg">
-          <label className="fl">Illeszd be a szöveget (wiki, könyvrészlet, saját leírás...)</label>
-          <textarea className="fta" rows={12} value={text} onChange={e=>setText(e.target.value)} placeholder="Pl.: One Piece wikiszöveg, Berserk karakterleírás, saját világépítés..."/>
+          <label className="fl">Wiki vagy forrás link *</label>
+          <input className="fi" value={universeUrl} onChange={e=>setUniverseUrl(e.target.value)}
+            placeholder="Pl.: https://jujutsu-kaisen.fandom.com/wiki/Jujutsu_Kaisen_Wiki"
+            autoFocus/>
         </div>
-        <div className="fi-note" style={{marginBottom:12}}>Az AI automatikusan kiolvassa a karaktereket, helyszíneket és lore elemeket, és minden karakterhez generál egy hang-profilt.</div>
+        <div className="fg">
+          <label className="fl">Extra kontextus (opcionális)</label>
+          <textarea className="fta" rows={3} value={extraText} onChange={e=>setExtraText(e.target.value)}
+            placeholder="Pl.: Csak a főszereplőket add hozzá, a mellékszereplőket hagyd ki."/>
+        </div>
+        <div className="fi-note" style={{marginBottom:12}}>Az AI elolvassa a megadott oldalt és automatikusan feltölti a Codexet. Adj meg egy wiki linket — pl. Fandom, Wikipedia, vagy bármilyen karakterlista oldal.</div>
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>Mégse</button>
-          <button className="btn btn-gold" disabled={!text.trim() || loading} onClick={doImport}>
+          <button className="btn btn-gold" disabled={!universeUrl.trim() || loading} onClick={doImport}>
             {loading ? '⏳ Elemzés...' : '🔍 Import és elemzés'}
           </button>
         </div>
