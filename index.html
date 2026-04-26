@@ -1507,13 +1507,16 @@ function App() {
           return u;
         });
       });
-      const finalText = result.hitMaxTokens ? trimToSentence(result.text) : result.text;
+      let finalText = result.hitMaxTokens ? trimToSentence(result.text) : result.text;
       if (result.hitMaxTokens) {
-        setHistory(prev => {
-          const u = [...prev];
-          u[u.length-1] = { ...u[u.length-1], content: finalText };
-          return u;
-        });
+        const contMsgs = [...apiMsgs, { role:'assistant', content: result.text }, { role:'user', content:'Folytasd pontosan ahol abbahagytad, ugyanabban a stílusban és hangnemben.' }];
+        try {
+          const cont = await callFn(activeKey, contMsgs, storyFromHistory(withUser), codex, locked, mode, text => {
+            setHistory(prev => { const u = [...prev]; u[u.length-1] = { role:'ai', content: finalText + text, ts:Date.now() }; return u; });
+          });
+          finalText = finalText + cont.text;
+        } catch(e) { /* ha a folytatás hibázik, az eredeti marad */ }
+        setHistory(prev => { const u = [...prev]; u[u.length-1] = { ...u[u.length-1], content: finalText }; return u; });
       }
     } catch(e) {
       setHistory(withUser);
