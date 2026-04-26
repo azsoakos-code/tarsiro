@@ -1562,8 +1562,7 @@ function App() {
   };
 
   const doImport = e => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => {
       try {
@@ -1572,7 +1571,25 @@ function App() {
         if (d.codex)    setCodex(d.codex);
         if (d.chapters) setChapters(d.chapters);
         if (d.locked)   setLocked(d.locked);
-        toast$('Adatok betöltve! ✓', true);
+
+        // Story összefoglaló a chatbe — hogy az AI tudja hol tartunk
+        const aiMessages = (d.history || []).filter(m => m.role === 'ai' && m.content);
+        if (aiMessages.length > 0) {
+          const lastAiChunks = aiMessages.slice(-3).map(m => m.content).join('\n\n---\n\n');
+          const resumeMsg = {
+            role: 'user',
+            content: `[FOLYTATÁS BETÖLTVE]\n\nAz előző session utolsó részei:\n\n${lastAiChunks.slice(-2000)}\n\n---\nInnen folytatjuk. Ismered a kontextust, tudsz mindent ami eddig történt. Várom az első mondatot vagy kérdést.`,
+            ts: Date.now(),
+          };
+          const systemNote = {
+            role: 'ai',
+            content: `✅ Session betöltve. Ismerem az előzményeket — ${aiMessages.length} korábbi AI válasz alapján tudom hol tartunk. Folytatjuk ahol abbahagytuk. Mit csinálunk?`,
+            ts: Date.now() + 1,
+          };
+          setHistory(prev => [...(d.history || []), resumeMsg, systemNote]);
+        }
+
+        toast$('Session betöltve! Az AI tudja hol tartotok. ✓', true);
       } catch { toast$('Érvénytelen fájl!'); }
       e.target.value = '';
     };
