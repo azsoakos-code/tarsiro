@@ -498,7 +498,7 @@ function save(d) {
 function buildSys(storyText, codex, locked, mode) {
   const cx = [
     codex.characters.length && 'KARAKTEREK:\n' + codex.characters.map(c =>
-      `  • ${c.name}${c.description ? ' — ' + c.description : ''}${c.motivation ? ' | Motiváció: ' + c.motivation : ''}${c.background ? ' | Háttér: ' + c.background : ''}${c.locked ? ' [ZÁROLT]' : ''}`
+      `  • ${c.name}${c.description ? ' — ' + c.description : ''}${c.motivation ? ' | Motiváció: ' + c.motivation : ''}${c.background ? ' | Háttér: ' + c.background : ''}${c.voice ? ' | HANG & STÍLUS: ' + c.voice : ''}${c.locked ? ' [ZÁROLT]' : ''}`
     ).join('\n'),
     codex.locations.length && 'HELYSZÍNEK:\n' + codex.locations.map(l =>
       `  • ${l.name}${l.description ? ' — ' + l.description : ''}${l.locked ? ' [ZÁROLT]' : ''}`
@@ -1213,10 +1213,90 @@ function EditorTab({ history, onSend, loading, locked, onLockAdd, onToast }) {
 // ─────────────────────────────────────────────
 // CODEX TAB
 // ─────────────────────────────────────────────
+function EditCodexModal({ item, section, onSave, onClose }) {
+  const [name,  setName]  = useState(item.name || '');
+  const [desc,  setDesc]  = useState(item.description || '');
+  const [motiv, setMotiv] = useState(item.motivation || '');
+  const [bg,    setBg]    = useState(item.background || '');
+  const [voice, setVoice] = useState(item.voice || '');
+  return (
+    <div className="overlay" onClick={e => e.target===e.currentTarget && onClose()}>
+      <div className="modal modal-wide">
+        <div className="modal-title">✏ Szerkesztés — {item.name}</div>
+        <div className="fg"><label className="fl">Név *</label><input className="fi" value={name} onChange={e=>setName(e.target.value)}/></div>
+        <div className="fg"><label className="fl">Leírás</label><textarea className="fta" rows={3} value={desc} onChange={e=>setDesc(e.target.value)}/></div>
+        {section === 'characters' && <>
+          <div className="fg"><label className="fl">Motiváció</label><input className="fi" value={motiv} onChange={e=>setMotiv(e.target.value)}/></div>
+          <div className="fg"><label className="fl">Háttértörténet</label><textarea className="fta" rows={3} value={bg} onChange={e=>setBg(e.target.value)}/></div>
+          <div className="fg"><label className="fl">🗣 Hogyan beszél / viselkedik?</label><textarea className="fta" rows={3} value={voice} onChange={e=>setVoice(e.target.value)} placeholder="Pl.: Rövid mondatok, szarkasztikus, sosem magyarázkodik. Katonás, direkt. Humor: önironikus."/></div>
+        </>}
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onClose}>Mégse</button>
+          <button className="btn btn-gold" onClick={()=>name.trim()&&onSave({...item,name,description:desc,motivation:motiv,background:bg,voice})} disabled={!name.trim()}>Mentés</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UniverseImportModal({ onImport, onClose }) {
+  const [text,    setText]    = useState('');
+  const [loading, setLoading] = useState(false);
+  const doImport = async () => {
+    if (!text.trim()) return;
+    setLoading(true);
+    const groqKey = localStorage.getItem('tarsiro_groqkey') || 'ZLIzNyd4Ryu1DJW77DWc9ywkYF3bydGWKJdrWrKQ4HfpPv67IxmB_ksg'.split('').reverse().join('');
+    const prompt = `Az alábbi szövegből olvasd ki az összes karaktert, helyszínt és lore elemet.
+Válaszolj KIZÁRÓLAG érvényes JSON formátumban, semmi más szöveg:
+{
+  "characters": [{"name":"...","description":"...","motivation":"...","background":"...","voice":"Hogyan beszél, milyen a stílusa, mondatritmus, szóhasználat"}],
+  "locations": [{"name":"...","description":"..."}],
+  "lore": [{"name":"...","description":"..."}]
+}
+SZÖVEG:
+${text.slice(0, 4000)}`;
+    try {
+      const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 2048, messages: [{ role:'user', content: prompt }] })
+      });
+      const data = await resp.json();
+      const raw  = data.choices?.[0]?.message?.content || '';
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('Nem sikerült JSON-t kiolvasni');
+      const parsed = JSON.parse(jsonMatch[0]);
+      onImport(parsed);
+    } catch(e) {
+      alert('Hiba az import során: ' + e.message);
+    } finally { setLoading(false); }
+  };
+  return (
+    <div className="overlay" onClick={e => e.target===e.currentTarget && onClose()}>
+      <div className="modal modal-wide">
+        <div className="modal-title">🌍 Univerzum Import</div>
+        <div className="fg">
+          <label className="fl">Illeszd be a szöveget (wiki, könyvrészlet, saját leírás...)</label>
+          <textarea className="fta" rows={12} value={text} onChange={e=>setText(e.target.value)} placeholder="Pl.: One Piece wikiszöveg, Berserk karakterleírás, saját világépítés..."/>
+        </div>
+        <div className="fi-note" style={{marginBottom:12}}>Az AI automatikusan kiolvassa a karaktereket, helyszíneket és lore elemeket, és minden karakterhez generál egy hang-profilt.</div>
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onClose}>Mégse</button>
+          <button className="btn btn-gold" disabled={!text.trim() || loading} onClick={doImport}>
+            {loading ? '⏳ Elemzés...' : '🔍 Import és elemzés'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CodexTab({ codex, setCodex, locked, setLocked }) {
-  const [sec, setSec]       = useState('characters');
-  const [showAdd, setAdd]   = useState(false);
+  const [sec, setSec]             = useState('characters');
+  const [showAdd, setAdd]         = useState(false);
   const [showLocks, setShowLocks] = useState(false);
+  const [editItem, setEditItem]   = useState(null);
+  const [showImport, setShowImport] = useState(false);
 
   const items = codex[sec] || [];
   const labels = { characters:'Karakterek', locations:'Helyszínek', lore:'Lore' };
@@ -1241,10 +1321,23 @@ function CodexTab({ codex, setCodex, locked, setLocked }) {
         <button className={`sec-btn ${showLocks?'on':''}`} style={{marginLeft:4}} onClick={()=>setShowLocks(!showLocks)}>
           🔒 Zárolások {locked.length>0 && <span style={{opacity:.5}}>({locked.length})</span>}
         </button>
-        <div style={{marginLeft:'auto'}}>
+        <div style={{marginLeft:'auto', display:'flex', gap:6}}>
+          <button className="btn btn-ghost" onClick={()=>setShowImport(true)}>🌍 Univerzum import</button>
           <button className="btn btn-gold" onClick={()=>setAdd(true)}>+ Hozzáadás</button>
         </div>
       </div>
+      {showImport && <UniverseImportModal onClose={()=>setShowImport(false)} onImport={parsed => {
+        setCodex({
+          characters: [...codex.characters, ...(parsed.characters||[]).map(c=>({...c,id:uid(),locked:false}))],
+          locations:  [...codex.locations,  ...(parsed.locations||[]).map(l=>({...l,id:uid(),locked:false}))],
+          lore:       [...codex.lore,        ...(parsed.lore||[]).map(l=>({...l,id:uid(),locked:false}))],
+        });
+        setShowImport(false);
+      }}/>}
+      {editItem && <EditCodexModal item={editItem} section={sec} onClose={()=>setEditItem(null)} onSave={updated => {
+        setCodex({...codex, [sec]: codex[sec].map(i=>i.id===updated.id?updated:i)});
+        setEditItem(null);
+      }}/>}
 
       {showLocks ? (
         <div className="lock-list">
@@ -1303,11 +1396,18 @@ function CodexTab({ codex, setCodex, locked, setLocked }) {
                   <div className="cx-fv">{item.background}</div>
                 </div>
               )}
+              {sec==='characters' && item.voice && (
+                <div className="cx-field">
+                  <div className="cx-fl">🗣 Hang & stílus</div>
+                  <div className="cx-fv" style={{fontStyle:'italic',color:'var(--gold)',opacity:.8}}>{item.voice}</div>
+                </div>
+              )}
               <div className="cx-actions">
                 <button className={`btn ${item.locked?'btn-gold':'btn-ghost'}`}
                   style={{fontSize:10,padding:'3px 9px'}} onClick={()=>toggleLock(item.id)}>
                   {item.locked ? '🔒 Zárolt' : '🔓 Zárolás'}
                 </button>
+                <button className="btn btn-ghost" style={{fontSize:10,padding:'3px 9px'}} onClick={()=>setEditItem(item)}>✏ Szerkesztés</button>
                 <button className="btn btn-danger" style={{fontSize:10,padding:'3px 9px',marginLeft:'auto'}}
                   onClick={()=>deleteItem(item.id)}>Törlés</button>
               </div>
