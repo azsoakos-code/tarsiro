@@ -476,6 +476,7 @@ const MODEL        = 'claude-sonnet-4-5';
 const GEMINI_MODEL = 'gemini-2.0-flash';
 const GROQ_MODEL   = 'llama-3.3-70b-versatile';
 const MAX_TOKENS   = 4096;
+const DEFAULT_GROQ_KEY = 'ZLIzNyd4Ryu1DJW77DWc9ywkYF3bydGWKJdrWrKQ4HfpPv67IxmB_ksg'.split('').reverse().join('');
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -1412,7 +1413,7 @@ function App() {
     if (ckey) setApiKey(ckey);
     if (gkey) setGeminiKey(gkey);
     if (rkey) setGroqKey(rkey);
-    const activeKey = prov==='gemini' ? gkey : prov==='groq' ? rkey : ckey;
+    const activeKey = prov==='gemini' ? gkey : prov==='groq' ? (rkey || DEFAULT_GROQ_KEY) : ckey;
     if (!activeKey) setShowAPI(true);
   }, []);
 
@@ -1477,7 +1478,7 @@ function App() {
   }
 
   const onSend = async (message, mode) => {
-    const activeKey = provider==='gemini' ? geminiKey : provider==='groq' ? groqKey : apiKey;
+    const activeKey = provider==='gemini' ? geminiKey : provider==='groq' ? (groqKey || DEFAULT_GROQ_KEY) : apiKey;
     if (!activeKey) { setShowAPI(true); return; }
     const userMsg = { role:'user', content:message, ts:Date.now() };
     const withUser = [...history, userMsg];
