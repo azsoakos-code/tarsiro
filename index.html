@@ -497,7 +497,7 @@ function save(d) {
 // ─────────────────────────────────────────────
 // SYSTEM PROMPT BUILDER
 // ─────────────────────────────────────────────
-function buildSys(storyText, codex, locked, mode) {
+function buildSys(storyText, codex, locked, mode, lang='hu') {
   const cx = [
     codex.characters.length && 'KARAKTEREK:\n' + codex.characters.map(c =>
       `  • ${c.name}${c.description ? ' — ' + c.description : ''}${c.motivation ? ' | Motiváció: ' + c.motivation : ''}${c.background ? ' | Háttér: ' + c.background : ''}${c.voice ? ' | HANG & STÍLUS: ' + c.voice : ''}${c.locked ? ' [ZÁROLT]' : ''}`
@@ -556,15 +556,15 @@ Mindig ismered az összes tárolt elemet. Sosem mondasz nekik ellent. Ha újat t
 
 IDENTITÁS:
 Partnerként szólsz, nem asszisztensként. Érdekel a történet, befektetsz az alkotásba, véleményed van.
-MINDIG MAGYARUL VÁLASZOLSZ.
+${lang === 'en' ? 'ALWAYS RESPOND IN ENGLISH. Never switch to any other language.' : 'MINDIG MAGYARUL VÁLASZOLSZ. Soha nem váltasz másik nyelvre.'}
 ${cx ? '\n---\nCODEX ADATBÁZIS:\n' + cx : ''}${lockedStr}${story}${modeMap[mode] || ''}`;
 }
 
 // ─────────────────────────────────────────────
 // CLAUDE API
 // ─────────────────────────────────────────────
-async function callClaude(apiKey, apiMsgs, storyText, codex, locked, mode, onChunk) {
-  const sys = buildSys(storyText, codex, locked, mode);
+async function callClaude(apiKey, apiMsgs, storyText, codex, locked, mode, lang, onChunk) {
+  const sys = buildSys(storyText, codex, locked, mode, lang);
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -624,8 +624,8 @@ function trimToSentence(text) {
 // ─────────────────────────────────────────────
 // GEMINI API
 // ─────────────────────────────────────────────
-async function callGemini(apiKey, apiMsgs, storyText, codex, locked, mode, onChunk) {
-  const sys = buildSys(storyText, codex, locked, mode);
+async function callGemini(apiKey, apiMsgs, storyText, codex, locked, mode, lang, onChunk) {
+  const sys = buildSys(storyText, codex, locked, mode, lang);
   const contents = apiMsgs.map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: m.content }]
@@ -672,8 +672,8 @@ async function callGemini(apiKey, apiMsgs, storyText, codex, locked, mode, onChu
 // ─────────────────────────────────────────────
 // GROQ API (ingyenes, Llama 3.3)
 // ─────────────────────────────────────────────
-async function callGroq(apiKey, apiMsgs, storyText, codex, locked, mode, onChunk) {
-  const sys = buildSys(storyText, codex, locked, mode);
+async function callGroq(apiKey, apiMsgs, storyText, codex, locked, mode, lang, onChunk) {
+  const sys = buildSys(storyText, codex, locked, mode, lang);
   const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -716,8 +716,8 @@ async function callGroq(apiKey, apiMsgs, storyText, codex, locked, mode, onChunk
   return { text: full, hitMaxTokens };
 }
 
-async function callOpenRouter(apiKey, apiMsgs, storyText, codex, locked, mode, onChunk) {
-  const sys = buildSys(storyText, codex, locked, mode);
+async function callOpenRouter(apiKey, apiMsgs, storyText, codex, locked, mode, lang, onChunk) {
+  const sys = buildSys(storyText, codex, locked, mode, lang);
   const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -1174,7 +1174,7 @@ function MicButton({ onFinal, onInterim, onError }) {
 // ─────────────────────────────────────────────
 // EDITOR TAB
 // ─────────────────────────────────────────────
-function EditorTab({ history, onSend, loading, locked, onLockAdd, onToast }) {
+function EditorTab({ history, onSend, loading, locked, onLockAdd, onToast, lang, setLang }) {
   const [input,   setInput]   = useState('');
   const [mode,    setMode]    = useState('writer');
   const [interim, setInterim] = useState('');
@@ -1255,6 +1255,10 @@ function EditorTab({ history, onSend, loading, locked, onLockAdd, onToast }) {
           {modes.map(([k,v]) => (
             <button key={k} className={`mbtn ${mode===k?'on':''}`} onClick={() => setMode(k)}>{v}</button>
           ))}
+          <div style={{marginLeft:'auto',display:'flex',gap:4}}>
+            <button className={`mbtn ${lang==='hu'?'on':''}`} title="Magyar válasz" onClick={() => setLang('hu')}>🇭🇺 HU</button>
+            <button className={`mbtn ${lang==='en'?'on':''}`} title="English response" onClick={() => setLang('en')}>🇬🇧 EN</button>
+          </div>
         </div>
         {interim && <div className="interim-chat">🎙 {interim}</div>}
         <div className="input-row">
@@ -1589,6 +1593,7 @@ function App() {
   const [groqKey,     setGroqKey]     = useState('');
   const [orKey,       setOrKey]       = useState('');
   const [provider,    setProvider]    = useState('groq');
+  const [lang,        setLang]        = useState('hu');
   const [loading,  setLoading] = useState(false);
   const [toast,    setToast]   = useState(null);
   const [showAPI,  setShowAPI] = useState(false);
@@ -1619,6 +1624,8 @@ function App() {
     if (gkey) setGeminiKey(gkey);
     if (rkey) setGroqKey(rkey);
     if (okey) setOrKey(okey);
+    const savedLang = localStorage.getItem('tarsiro_lang') || 'hu';
+    setLang(savedLang);
     const activeKey = prov==='gemini' ? gkey : prov==='groq' ? (rkey || DEFAULT_GROQ_KEY) : prov==='openrouter' ? okey : ckey;
     if (!activeKey) setShowAPI(true);
   }, []);
@@ -1701,7 +1708,8 @@ function App() {
       .map(m => m.content).join('\n\n').slice(-3000);
   }
 
-  const onSend = async (message, mode) => {
+  const onSend = async (message, mode, langOverride) => {
+    const activeLang = langOverride || lang;
     // Auto-switch to OpenRouter on adult content keywords
     let activeProv = provider;
     if (ADULT_RE.test(message) && provider !== 'openrouter') {
@@ -1730,7 +1738,7 @@ function App() {
     }));
     const callFn = activeProv==='gemini' ? callGemini : activeProv==='groq' ? callGroq : activeProv==='openrouter' ? callOpenRouter : callClaude;
     try {
-      const result = await callFn(activeKey, apiMsgs, storyFromHistory(withUser), codex, locked, mode, text => {
+      const result = await callFn(activeKey, apiMsgs, storyFromHistory(withUser), codex, locked, mode, activeLang, text => {
         setHistory(prev => {
           const u = [...prev];
           u[u.length-1] = { role:'ai', content:text, ts:Date.now() };
@@ -1739,9 +1747,12 @@ function App() {
       });
       let finalText = result.hitMaxTokens ? trimToSentence(result.text) : result.text;
       if (result.hitMaxTokens) {
-        const contMsgs = [...apiMsgs, { role:'assistant', content: result.text }, { role:'user', content:'Folytasd pontosan ahol abbahagytad, ugyanabban a stílusban és hangnemben.' }];
+        const contPrompt = activeLang === 'en'
+          ? 'Continue exactly where you left off, same style and tone.'
+          : 'Folytasd pontosan ahol abbahagytad, ugyanabban a stílusban és hangnemben.';
+        const contMsgs = [...apiMsgs, { role:'assistant', content: result.text }, { role:'user', content: contPrompt }];
         try {
-          const cont = await callFn(activeKey, contMsgs, storyFromHistory(withUser), codex, locked, mode, text => {
+          const cont = await callFn(activeKey, contMsgs, storyFromHistory(withUser), codex, locked, mode, activeLang, text => {
             setHistory(prev => { const u = [...prev]; u[u.length-1] = { role:'ai', content: finalText + text, ts:Date.now() }; return u; });
           });
           finalText = finalText + cont.text;
@@ -1795,7 +1806,8 @@ function App() {
       <main className="content">
         {tab === 'editor' && (
           <EditorTab history={history}
-            onSend={onSend} loading={loading} locked={locked} onLockAdd={addLock} onToast={toast$}/>
+            onSend={onSend} loading={loading} locked={locked} onLockAdd={addLock} onToast={toast$}
+            lang={lang} setLang={l => { setLang(l); localStorage.setItem('tarsiro_lang', l); }}/>
         )}
         {tab === 'codex' && (
           <CodexTab codex={codex} setCodex={setCodex} locked={locked} setLocked={setLocked}/>
