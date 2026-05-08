@@ -1736,6 +1736,11 @@ function App() {
       role: m.role === 'ai' ? 'assistant' : 'user',
       content: m.content.length > msgMaxChars ? '…' + m.content.slice(-msgMaxChars) : m.content,
     }));
+    // Force language on last user message so the model can't ignore it
+    if (activeLang === 'en' && apiMsgs.length > 0) {
+      const last = apiMsgs[apiMsgs.length - 1];
+      if (last.role === 'user') last.content += '\n\n[IMPORTANT: Your reply must be in English only.]';
+    }
     const callFn = activeProv==='gemini' ? callGemini : activeProv==='groq' ? callGroq : activeProv==='openrouter' ? callOpenRouter : callClaude;
     try {
       const result = await callFn(activeKey, apiMsgs, storyFromHistory(withUser), codex, locked, mode, activeLang, text => {
