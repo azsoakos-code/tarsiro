@@ -475,8 +475,10 @@ const KEY_KEY    = 'tarsiro_apikey';
 const MODEL        = 'claude-sonnet-4-5';
 const GEMINI_MODEL = 'gemini-2.0-flash';
 const GROQ_MODEL   = 'llama-3.3-70b-versatile';
+const OR_MODEL     = 'gryphe/mythomax-l2-13b';
 const MAX_TOKENS   = 4096;
 const DEFAULT_GROQ_KEY = 'ZLIzNyd4Ryu1DJW77DWc9ywkYF3bydGWKJdrWrKQ4HfpPv67IxmB_ksg'.split('').reverse().join('');
+const ADULT_RE = /\b(szex|szexuális|erotikus|18\+|felnőtt tartalom|explicit|meztelen|vetkőz|aktus|orgazmus|csábít|sex scene|nsfw|adult content|gore|grafikus erőszak)\b/i;
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -714,6 +716,52 @@ async function callGroq(apiKey, apiMsgs, storyText, codex, locked, mode, onChunk
   return { text: full, hitMaxTokens };
 }
 
+async function callOpenRouter(apiKey, apiMsgs, storyText, codex, locked, mode, onChunk) {
+  const sys = buildSys(storyText, codex, locked, mode);
+  const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'HTTP-Referer': 'https://azsoakos-code.github.io/tarsiro/',
+      'X-Title': 'Társíró',
+    },
+    body: JSON.stringify({
+      model: OR_MODEL,
+      max_tokens: MAX_TOKENS,
+      stream: true,
+      messages: [{ role: 'system', content: sys }, ...apiMsgs],
+    }),
+  });
+
+  if (!resp.ok) {
+    const e = await resp.json().catch(() => ({}));
+    throw new Error(e.error?.message || `HTTP ${resp.status}`);
+  }
+
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let full = '';
+  let hitMaxTokens = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    for (const line of dec.decode(value, { stream: true }).split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      const d = line.slice(6).trim();
+      if (d === '[DONE]') continue;
+      try {
+        const j = JSON.parse(d);
+        const text = j.choices?.[0]?.delta?.content;
+        if (text) { full += text; onChunk(full); }
+        if (j.choices?.[0]?.finish_reason === 'length') hitMaxTokens = true;
+      } catch {}
+    }
+  }
+  return { text: full, hitMaxTokens };
+}
+
 // ─────────────────────────────────────────────
 // EXPORTS
 // ─────────────────────────────────────────────
@@ -764,13 +812,14 @@ function Toast({ msg, ok, onDone }) {
 // ─────────────────────────────────────────────
 // MODALS
 // ─────────────────────────────────────────────
-function SettingsModal({ provider, apiKey, geminiKey, groqKey, onSave, onClose }) {
+function SettingsModal({ provider, apiKey, geminiKey, groqKey, orKey, onSave, onClose }) {
   const [prov, setProv] = useState(provider || 'groq');
   const [cKey, setCKey] = useState(apiKey || '');
   const [gKey, setGKey] = useState(geminiKey || '');
   const [rKey, setRKey] = useState(groqKey || '');
-  const activeKey = (prov==='claude'?cKey:prov==='gemini'?gKey:rKey).trim();
-  const save = () => onSave({ provider: prov, apiKey: cKey, geminiKey: gKey, groqKey: rKey });
+  const [oKey, setOKey] = useState(orKey || '');
+  const activeKey = (prov==='claude'?cKey:prov==='gemini'?gKey:prov==='openrouter'?oKey:rKey).trim();
+  const save = () => onSave({ provider: prov, apiKey: cKey, geminiKey: gKey, groqKey: rKey, orKey: oKey });
 
   return (
     <div className="overlay" onClick={e => e.target===e.currentTarget && onClose()}>
@@ -786,11 +835,15 @@ function SettingsModal({ provider, apiKey, geminiKey, groqKey, onSave, onClose }
             </button>
             <button className={`btn ${prov==='claude'?'btn-gold':'btn-ghost'}`}
               style={{flex:1}} onClick={()=>setProv('claude')}>
-              🔴 Claude — legjobb (fizetős)
+              🔴 Claude — legjobb
             </button>
             <button className={`btn ${prov==='gemini'?'btn-gold':'btn-ghost'}`}
               style={{flex:1}} onClick={()=>setProv('gemini')}>
               🟢 Gemini — ingyenes
+            </button>
+            <button className={`btn ${prov==='openrouter'?'btn-gold':'btn-ghost'}`}
+              style={{flex:1}} onClick={()=>setProv('openrouter')}>
+              🔞 OpenRouter — 18+
             </button>
           </div>
         </div>
@@ -827,6 +880,19 @@ function SettingsModal({ provider, apiKey, geminiKey, groqKey, onSave, onClose }
             <div className="fi-note">
               Ingyenes kulcs: <a href="https://aistudio.google.com/app/apikey" target="_blank"
                 style={{color:'var(--gold)'}}>aistudio.google.com</a> → Get API key
+            </div>
+          </div>
+        )}
+        {prov === 'openrouter' && (
+          <div className="fg">
+            <label className="fl">OpenRouter API Kulcs — 18+ / korlátozás nélkül</label>
+            <input className="fi" type="password" value={oKey} onChange={e=>setOKey(e.target.value)}
+              placeholder="sk-or-v1-..." autoFocus onKeyDown={e=>e.key==='Enter'&&activeKey&&save()}/>
+            <div className="fi-note">
+              Ingyenes regisztráció + kulcs: <a href="https://openrouter.ai/keys" target="_blank"
+                style={{color:'var(--gold)'}}>openrouter.ai/keys</a>
+              {' '}— Model: <strong style={{color:'var(--gold)'}}>MythoMax 13B</strong> (~$0.0004/üzenet).
+              Ha megvan a kulcs, az app automatikusan erre vált ha 18+ tartalmat kérsz bármely módban.
             </div>
           </div>
         )}
@@ -1518,10 +1584,11 @@ function ChaptersTab({ chapters, setChapters, story }) {
 // ─────────────────────────────────────────────
 function App() {
   const [tab,      setTab]     = useState('editor');
-  const [apiKey,   setApiKey]   = useState('');
-  const [geminiKey,setGeminiKey]= useState('');
-  const [groqKey,  setGroqKey]  = useState('');
-  const [provider, setProvider] = useState('groq');
+  const [apiKey,      setApiKey]      = useState('');
+  const [geminiKey,   setGeminiKey]   = useState('');
+  const [groqKey,     setGroqKey]     = useState('');
+  const [orKey,       setOrKey]       = useState('');
+  const [provider,    setProvider]    = useState('groq');
   const [loading,  setLoading] = useState(false);
   const [toast,    setToast]   = useState(null);
   const [showAPI,  setShowAPI] = useState(false);
@@ -1546,11 +1613,13 @@ function App() {
     const ckey = localStorage.getItem(KEY_KEY) || '';
     const gkey = localStorage.getItem('tarsiro_geminikey') || '';
     const rkey = localStorage.getItem('tarsiro_groqkey') || '';
+    const okey = localStorage.getItem('tarsiro_orkey') || '';
     setProvider(prov);
     if (ckey) setApiKey(ckey);
     if (gkey) setGeminiKey(gkey);
     if (rkey) setGroqKey(rkey);
-    const activeKey = prov==='gemini' ? gkey : prov==='groq' ? (rkey || DEFAULT_GROQ_KEY) : ckey;
+    if (okey) setOrKey(okey);
+    const activeKey = prov==='gemini' ? gkey : prov==='groq' ? (rkey || DEFAULT_GROQ_KEY) : prov==='openrouter' ? okey : ckey;
     if (!activeKey) setShowAPI(true);
   }, []);
 
@@ -1563,14 +1632,15 @@ function App() {
     setTimeout(() => setToast(null), 3400);
   };
 
-  const saveSettings = ({ provider: prov, apiKey: akey, geminiKey: gkey, groqKey: rkey }) => {
+  const saveSettings = ({ provider: prov, apiKey: akey, geminiKey: gkey, groqKey: rkey, orKey: okey }) => {
     setProvider(prov);
     localStorage.setItem('tarsiro_provider', prov);
     if (akey.trim()) { setApiKey(akey.trim()); localStorage.setItem(KEY_KEY, akey.trim()); }
     if (gkey.trim()) { setGeminiKey(gkey.trim()); localStorage.setItem('tarsiro_geminikey', gkey.trim()); }
     if (rkey.trim()) { setGroqKey(rkey.trim()); localStorage.setItem('tarsiro_groqkey', rkey.trim()); }
+    if (okey.trim()) { setOrKey(okey.trim()); localStorage.setItem('tarsiro_orkey', okey.trim()); }
     setShowAPI(false);
-    const labels = { groq:'🟣 Groq beállítva!', gemini:'🟢 Gemini beállítva!', claude:'🔴 Claude beállítva!' };
+    const labels = { groq:'🟣 Groq beállítva!', gemini:'🟢 Gemini beállítva!', claude:'🔴 Claude beállítva!', openrouter:'🔞 OpenRouter beállítva!' };
     toast$(labels[prov] || 'Beállítva!', true);
   };
 
@@ -1632,20 +1702,33 @@ function App() {
   }
 
   const onSend = async (message, mode) => {
-    const activeKey = provider==='gemini' ? geminiKey : provider==='groq' ? (groqKey || DEFAULT_GROQ_KEY) : apiKey;
+    // Auto-switch to OpenRouter on adult content keywords
+    let activeProv = provider;
+    if (ADULT_RE.test(message) && provider !== 'openrouter') {
+      if (orKey) {
+        activeProv = 'openrouter';
+        toast$('🔞 OpenRouter-re váltva (felnőtt tartalom)', true);
+      } else {
+        toast$('⚠ OpenRouter kulcs hiányzik — állítsd be a ⚙ menüben');
+      }
+    }
+    const activeKey = activeProv==='gemini' ? geminiKey
+      : activeProv==='groq'        ? (groqKey || DEFAULT_GROQ_KEY)
+      : activeProv==='openrouter'  ? orKey
+      : apiKey;
     if (!activeKey) { setShowAPI(true); return; }
     const userMsg = { role:'user', content:message, ts:Date.now() };
     const withUser = [...history, userMsg];
     const placeholder = { role:'ai', content:'', ts:Date.now() };
     setHistory([...withUser, placeholder]);
     setLoading(true);
-    const msgLimit = provider === 'groq' ? 8 : 22;
-    const msgMaxChars = provider === 'groq' ? 1200 : 99999;
+    const msgLimit = activeProv === 'groq' ? 8 : 22;
+    const msgMaxChars = activeProv === 'groq' ? 1200 : 99999;
     const apiMsgs = withUser.slice(-msgLimit).map(m => ({
       role: m.role === 'ai' ? 'assistant' : 'user',
       content: m.content.length > msgMaxChars ? '…' + m.content.slice(-msgMaxChars) : m.content,
     }));
-    const callFn = provider==='gemini' ? callGemini : provider==='groq' ? callGroq : callClaude;
+    const callFn = activeProv==='gemini' ? callGemini : activeProv==='groq' ? callGroq : activeProv==='openrouter' ? callOpenRouter : callClaude;
     try {
       const result = await callFn(activeKey, apiMsgs, storyFromHistory(withUser), codex, locked, mode, text => {
         setHistory(prev => {
@@ -1699,10 +1782,11 @@ function App() {
           )}
           <button className="btn btn-ghost" onClick={()=>setShowLock(true)}>🔒 Zárolás</button>
           <button className="btn btn-ghost" onClick={()=>setShowAPI(true)}
-            style={!(provider==='gemini'?geminiKey:provider==='groq'?groqKey:apiKey)?{borderColor:'#8b4a1a',color:'#e09050'}:{}}>
-            {provider==='groq'   ? (groqKey   ? '🟣 Groq'   : '⚠ API kulcs')
-            :provider==='gemini' ? (geminiKey ? '🟢 Gemini' : '⚠ API kulcs')
-            :                      (apiKey    ? '🔴 Claude' : '⚠ API kulcs')}
+            style={!(provider==='gemini'?geminiKey:provider==='groq'?groqKey:provider==='openrouter'?orKey:apiKey)?{borderColor:'#8b4a1a',color:'#e09050'}:{}}>
+            {provider==='groq'        ? (groqKey ? '🟣 Groq'        : '⚠ API kulcs')
+            :provider==='gemini'      ? (geminiKey ? '🟢 Gemini'    : '⚠ API kulcs')
+            :provider==='openrouter'  ? (orKey ? '🔞 OpenRouter'    : '⚠ API kulcs')
+            :                           (apiKey ? '🔴 Claude'        : '⚠ API kulcs')}
           </button>
         </div>
       </header>
@@ -1739,7 +1823,7 @@ function App() {
       </div>
 
       {/* Modals */}
-      {showAPI  && <SettingsModal provider={provider} apiKey={apiKey} geminiKey={geminiKey} groqKey={groqKey} onSave={saveSettings} onClose={()=>setShowAPI(false)}/>}
+      {showAPI  && <SettingsModal provider={provider} apiKey={apiKey} geminiKey={geminiKey} groqKey={groqKey} orKey={orKey} onSave={saveSettings} onClose={()=>setShowAPI(false)}/>}
       {showLock && <LockModal onLock={t=>{ addLock(t); setShowLock(false); }} onClose={()=>setShowLock(false)}/>}
 
       {/* Toast */}
