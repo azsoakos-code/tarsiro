@@ -405,6 +405,78 @@
     .lock-rm:hover { color: var(--redt); }
 
     /* ── Mobile ── */
+    /* ── Mood badges ── */
+    .mood-row { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
+    .mood-tag {
+      font-size: 9px; padding: 1px 8px; border-radius: 10px;
+      border: 1px solid var(--border2); background: var(--s3); color: var(--dim);
+      letter-spacing: .03em;
+    }
+
+    /* ── Selection toolbar ── */
+    .sel-toolbar {
+      position: fixed; z-index: 500;
+      display: flex; gap: 3px; padding: 5px 6px;
+      background: var(--s3); border: 1px solid var(--border2);
+      border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.7);
+      transform: translateX(-50%) translateY(-100%);
+      pointer-events: all;
+    }
+    .sel-btn {
+      padding: 4px 9px; border-radius: 3px; font-size: 10px;
+      cursor: pointer; border: 1px solid var(--border);
+      background: var(--s2); color: var(--dim);
+      transition: all .12s; outline: none; white-space: nowrap;
+    }
+    .sel-btn:hover { border-color: var(--gold-dim); color: var(--gold); }
+
+    /* ── Auto-codex chip ── */
+    .codex-chips {
+      display: flex; flex-direction: column; gap: 4px;
+      padding: 0 0 6px;
+    }
+    .codex-chip {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      padding: 6px 10px; border-radius: 5px;
+      background: rgba(212,168,67,.07); border: 1px solid var(--gold-dim);
+      font-size: 10px; color: var(--gold);
+    }
+    .chip-name { font-family: 'Cinzel', serif; font-size: 11px; }
+    .chip-add {
+      padding: 2px 8px; border-radius: 3px; font-size: 10px;
+      cursor: pointer; border: 1px solid var(--gold-dim);
+      background: rgba(212,168,67,.12); color: var(--gold);
+      transition: all .12s; outline: none;
+    }
+    .chip-add:hover { background: var(--gold); color: var(--bg); }
+    .chip-x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; margin-left: auto; padding: 0 2px; }
+    .chip-x:hover { color: var(--redt); }
+
+    /* ── Timeline tab ── */
+    .timeline-tab { height: 100%; display: flex; flex-direction: column; }
+    .tl-bar {
+      height: 48px; flex-shrink: 0; padding: 0 18px;
+      display: flex; align-items: center; gap: 10px;
+      background: var(--s1); border-bottom: 1px solid var(--border);
+    }
+    .tl-add-row {
+      padding: 10px 18px; border-bottom: 1px solid var(--border);
+      background: var(--s1); display: flex; gap: 8px; align-items: center;
+    }
+    .tl-list { flex: 1; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+    .tl-item {
+      background: var(--s2); border: 1px solid var(--border);
+      border-radius: 7px; padding: 10px 14px;
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    .tl-date {
+      font-size: 10px; color: var(--gold); letter-spacing: .06em;
+      font-family: 'Cinzel', serif; min-width: 90px; flex-shrink: 0; padding-top: 1px;
+    }
+    .tl-event { font-size: 12px; color: var(--text); flex: 1; line-height: 1.5; }
+    .tl-rm { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0; flex-shrink: 0; }
+    .tl-rm:hover { color: var(--redt); }
+
     @supports (height: 100dvh) { .app { height: 100dvh; } }
 
     @media (max-width: 640px) {
@@ -495,9 +567,44 @@ function save(d) {
 }
 
 // ─────────────────────────────────────────────
+// MOOD DETECTION
+// ─────────────────────────────────────────────
+const MOOD_RULES = [
+  { tag:'⚫ Sötét',        re:/gyilkos|halál|vér|gyász|sötétség|kegyetlen|pusztul|fájdalom|könnye[ik]|elveszít/i },
+  { tag:'⚔ Feszült',      re:/harc|csata|fegyver|düh|veszély|menekül|üldöz|robban|feszül|riadt|adrenalin/i },
+  { tag:'🌅 Melankolikus', re:/hiány|emlék|múlt|visszatér|magány|elveszett|nosztalgia|álmodoz|bánat|szomorú/i },
+  { tag:'❤ Romantikus',   re:/szerelem|csók|ölelés|vonzalom|simogat|szívverés|vágyódik|érzés/i },
+  { tag:'😄 Humoros',     re:/nevet|vicc|tréfa|mosolyog|vicces|mókás|szórakoztat/i },
+  { tag:'✨ Mágikus',     re:/varázs|mágia|ragyog|természetfeletti|csoda|titokzatos|misztikus/i },
+  { tag:'🔥 Akció',       re:/rohan|ugrik|üt|rúg|robbant|csap|törtet|küzd|fut|fegyver/i },
+  { tag:'🤫 Titokzatos',  re:/suttog|figyel|les|óvatos|hallgat|rejt|titok|árnyék/i },
+];
+function detectMood(text) {
+  return MOOD_RULES.filter(r => r.re.test(text)).map(r => r.tag).slice(0, 3);
+}
+
+// ─────────────────────────────────────────────
+// AUTO-CODEX NAME DETECTION
+// ─────────────────────────────────────────────
+const HU_STOP = new Set(['Az','Nem','Igen','Ha','Hogy','Ami','Ezt','Egy','De','És','Most','Már','Csak','Még','Sem','Azt','Volt','Van','Lesz','Lett','Majd','Így','Úgy','Mert','Ahol','Amikor','Ahogy','Ő','Őt','Én','Te','Mi','Ti','Ők']);
+function detectNewNames(text, codex) {
+  const existing = new Set([
+    ...codex.characters.map(c => c.name.toLowerCase()),
+    ...codex.locations.map(l => l.name.toLowerCase()),
+    ...codex.lore.map(l => l.name.toLowerCase()),
+  ]);
+  const counts = {};
+  (text.match(/\b[A-ZÁÉÍÓÖŐÚÜŰ][a-záéíóöőúüű]{2,}\b/g) || []).forEach(w => {
+    if (!HU_STOP.has(w) && !existing.has(w.toLowerCase())) counts[w] = (counts[w]||0)+1;
+  });
+  return Object.entries(counts).filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1]).map(([n])=>n).slice(0,3);
+}
+
+// ─────────────────────────────────────────────
 // SYSTEM PROMPT BUILDER
 // ─────────────────────────────────────────────
-function buildSys(storyText, codex, locked, mode, lang='hu') {
+function buildSys(storyText, codex, locked, mode, lang='hu', extras={}) {
+  const { timeline=[], userStyle='', lastMood=[] } = extras;
   const cx = [
     codex.characters.length && 'KARAKTEREK:\n' + codex.characters.map(c =>
       `  • ${c.name}${c.description ? ' — ' + c.description : ''}${c.motivation ? ' | Motiváció: ' + c.motivation : ''}${c.background ? ' | Háttér: ' + c.background : ''}${c.voice ? ' | HANG & STÍLUS: ' + c.voice : ''}${c.locked ? ' [ZÁROLT]' : ''}`
@@ -557,14 +664,17 @@ Mindig ismered az összes tárolt elemet. Sosem mondasz nekik ellent. Ha újat t
 IDENTITÁS:
 Partnerként szólsz, nem asszisztensként. Érdekel a történet, befektetsz az alkotásba, véleményed van.
 ${lang === 'en' ? 'ALWAYS RESPOND IN ENGLISH. Never switch to any other language.' : 'MINDIG MAGYARUL VÁLASZOLSZ. Soha nem váltasz másik nyelvre.'}
+${lastMood.length ? '\nAKTUÁLIS HANGULAT (tartsd meg a következő jelenetben is): ' + lastMood.join(' · ') : ''}
+${timeline.length ? '\nIDŐVONAL — sosem mondasz ezeknek ellent:\n' + timeline.map(e=>`  ${e.date?e.date+': ':'• '}${e.event}`).join('\n') : ''}
+${userStyle.trim() ? '\nA FELHASZNÁLÓ ÍRÓI STÍLUSA — pontosan így írj:\n"""\n' + userStyle.slice(0,1200) + '\n"""' : ''}
 ${cx ? '\n---\nCODEX ADATBÁZIS:\n' + cx : ''}${lockedStr}${story}${modeMap[mode] || ''}`;
 }
 
 // ─────────────────────────────────────────────
 // CLAUDE API
 // ─────────────────────────────────────────────
-async function callClaude(apiKey, apiMsgs, storyText, codex, locked, mode, lang, onChunk) {
-  const sys = buildSys(storyText, codex, locked, mode, lang);
+async function callClaude(apiKey, apiMsgs, storyText, codex, locked, mode, lang, extras, onChunk) {
+  const sys = buildSys(storyText, codex, locked, mode, lang, extras);
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -624,8 +734,8 @@ function trimToSentence(text) {
 // ─────────────────────────────────────────────
 // GEMINI API
 // ─────────────────────────────────────────────
-async function callGemini(apiKey, apiMsgs, storyText, codex, locked, mode, lang, onChunk) {
-  const sys = buildSys(storyText, codex, locked, mode, lang);
+async function callGemini(apiKey, apiMsgs, storyText, codex, locked, mode, lang, extras, onChunk) {
+  const sys = buildSys(storyText, codex, locked, mode, lang, extras);
   const contents = apiMsgs.map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: m.content }]
@@ -672,8 +782,8 @@ async function callGemini(apiKey, apiMsgs, storyText, codex, locked, mode, lang,
 // ─────────────────────────────────────────────
 // GROQ API (ingyenes, Llama 3.3)
 // ─────────────────────────────────────────────
-async function callGroq(apiKey, apiMsgs, storyText, codex, locked, mode, lang, onChunk) {
-  const sys = buildSys(storyText, codex, locked, mode, lang);
+async function callGroq(apiKey, apiMsgs, storyText, codex, locked, mode, lang, extras, onChunk) {
+  const sys = buildSys(storyText, codex, locked, mode, lang, extras);
   const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -716,8 +826,8 @@ async function callGroq(apiKey, apiMsgs, storyText, codex, locked, mode, lang, o
   return { text: full, hitMaxTokens };
 }
 
-async function callOpenRouter(apiKey, apiMsgs, storyText, codex, locked, mode, lang, onChunk) {
-  const sys = buildSys(storyText, codex, locked, mode, lang);
+async function callOpenRouter(apiKey, apiMsgs, storyText, codex, locked, mode, lang, extras, onChunk) {
+  const sys = buildSys(storyText, codex, locked, mode, lang, extras);
   const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -812,14 +922,15 @@ function Toast({ msg, ok, onDone }) {
 // ─────────────────────────────────────────────
 // MODALS
 // ─────────────────────────────────────────────
-function SettingsModal({ provider, apiKey, geminiKey, groqKey, orKey, onSave, onClose }) {
-  const [prov, setProv] = useState(provider || 'groq');
-  const [cKey, setCKey] = useState(apiKey || '');
-  const [gKey, setGKey] = useState(geminiKey || '');
-  const [rKey, setRKey] = useState(groqKey || '');
-  const [oKey, setOKey] = useState(orKey || '');
+function SettingsModal({ provider, apiKey, geminiKey, groqKey, orKey, userStyle, onSave, onClose }) {
+  const [prov,      setProv]      = useState(provider || 'groq');
+  const [cKey,      setCKey]      = useState(apiKey || '');
+  const [gKey,      setGKey]      = useState(geminiKey || '');
+  const [rKey,      setRKey]      = useState(groqKey || '');
+  const [oKey,      setOKey]      = useState(orKey || '');
+  const [styleText, setStyleText] = useState(userStyle || '');
   const activeKey = (prov==='claude'?cKey:prov==='gemini'?gKey:prov==='openrouter'?oKey:rKey).trim();
-  const save = () => onSave({ provider: prov, apiKey: cKey, geminiKey: gKey, groqKey: rKey, orKey: oKey });
+  const save = () => onSave({ provider: prov, apiKey: cKey, geminiKey: gKey, groqKey: rKey, orKey: oKey, userStyle: styleText });
 
   return (
     <div className="overlay" onClick={e => e.target===e.currentTarget && onClose()}>
@@ -896,6 +1007,14 @@ function SettingsModal({ provider, apiKey, geminiKey, groqKey, orKey, onSave, on
             </div>
           </div>
         )}
+
+        <hr style={{border:'none',borderTop:'1px solid var(--border)',margin:'14px 0'}}/>
+        <div className="fg">
+          <label className="fl">Saját Írói Stílus — 3-5 saját írásmintád beillesztve, az AI megtanulja a hangodat</label>
+          <textarea className="fta" rows={5} value={styleText} onChange={e=>setStyleText(e.target.value)}
+            placeholder={'Illeszd be saját írásaid részleteit. Az AI innen tanulja meg mondatritmusodat, szóhasználatodat, hangnemédet — és így ír majd.\n\nMinél több minta, annál pontosabb.'}/>
+          <div className="fi-note">A szöveg csak a böngésződben tárolódik, sehova sem küldődik el.</div>
+        </div>
 
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>Mégse</button>
@@ -1174,12 +1293,31 @@ function MicButton({ onFinal, onInterim, onError }) {
 // ─────────────────────────────────────────────
 // EDITOR TAB
 // ─────────────────────────────────────────────
-function EditorTab({ history, onSend, loading, locked, onLockAdd, onToast, lang, setLang }) {
-  const [input,   setInput]   = useState('');
-  const [mode,    setMode]    = useState('writer');
-  const [interim, setInterim] = useState('');
+function EditorTab({ history, onSend, loading, locked, onLockAdd, onToast, lang, setLang, pendingNames, onAddToCodex, onDismissName }) {
+  const [input,      setInput]     = useState('');
+  const [mode,       setMode]      = useState('writer');
+  const [interim,    setInterim]   = useState('');
+  const [selToolbar, setSelToolbar]= useState(null); // {x,y,text}
   const endRef = useRef(null);
   const inRef  = useRef(null);
+
+  useEffect(() => {
+    const onUp = () => {
+      const sel = window.getSelection();
+      if (!sel || !sel.toString().trim()) { setSelToolbar(null); return; }
+      const text = sel.toString().trim();
+      const range = sel.getRangeAt(0);
+      const node = range.commonAncestorContainer;
+      const bubble = node.nodeType === 3 ? node.parentElement : node;
+      if (!bubble?.closest('.msg.ai')) { setSelToolbar(null); return; }
+      const rect = range.getBoundingClientRect();
+      setSelToolbar({ x: rect.left + rect.width / 2, y: rect.top, text });
+    };
+    const onDown = (e) => { if (!e.target.closest('.sel-toolbar')) setSelToolbar(null); };
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('mousedown', onDown);
+    return () => { document.removeEventListener('mouseup', onUp); document.removeEventListener('mousedown', onDown); };
+  }, []);
 
   const insertIntoChat = (text) => {
     const el = inRef.current;
@@ -1212,6 +1350,14 @@ function EditorTab({ history, onSend, loading, locked, onLockAdd, onToast, lang,
 
   return (
     <div style={{height:'100%', display:'flex', flexDirection:'column', background:'var(--bg)'}}>
+      {selToolbar && (
+        <div className="sel-toolbar" style={{left: selToolbar.x, top: selToolbar.y}}>
+          <button className="sel-btn" onClick={()=>{ onSend('Írj tovább ebből: "'+selToolbar.text.slice(0,120)+'"', 'writer'); setSelToolbar(null); window.getSelection()?.removeAllRanges(); }}>✍ Tovább</button>
+          <button className="sel-btn" onClick={()=>{ onSend('Írd át ezt a részt — más szavakkal, de ugyanolyan hangnemben: "'+selToolbar.text.slice(0,200)+'"', 'writer'); setSelToolbar(null); window.getSelection()?.removeAllRanges(); }}>🔄 Átír</button>
+          <button className="sel-btn" onClick={()=>{ onSend('Bővítsd ki részletesebbre ezt a részt: "'+selToolbar.text.slice(0,200)+'"', 'writer'); setSelToolbar(null); window.getSelection()?.removeAllRanges(); }}>🔍 Bővít</button>
+          <button className="sel-btn" onClick={()=>{ onLockAdd(selToolbar.text.slice(0,200)); setSelToolbar(null); window.getSelection()?.removeAllRanges(); }}>🔒 Zárol</button>
+        </div>
+      )}
       <div className="chat-msgs">
         {history.length === 0 && (
           <div className="empty" style={{gridColumn:'unset', padding:'60px 24px'}}>
@@ -1220,6 +1366,18 @@ function EditorTab({ history, onSend, loading, locked, onLockAdd, onToast, lang,
               Üdv a Társíróban.<br/>
               <span style={{color:'var(--gold)',opacity:.7}}>Kezdj el írni, ötletelni, vagy kérj valamit az AI-tól.</span>
             </div>
+          </div>
+        )}
+        {pendingNames && pendingNames.length > 0 && (
+          <div className="codex-chips">
+            {pendingNames.map(name => (
+              <div key={name} className="codex-chip">
+                <span>✨ Új karakter észlelve:</span>
+                <span className="chip-name">{name}</span>
+                <button className="chip-add" onClick={()=>onAddToCodex(name)}>+ Codex</button>
+                <button className="chip-x" onClick={()=>onDismissName(name)}>×</button>
+              </div>
+            ))}
           </div>
         )}
         {history.map((m, i) => (
@@ -1237,6 +1395,11 @@ function EditorTab({ history, onSend, loading, locked, onLockAdd, onToast, lang,
                 </button>
               )}
             </div>
+            {m.role === 'ai' && m.mood && m.mood.length > 0 && (
+              <div className="mood-row">
+                {m.mood.map(t => <span key={t} className="mood-tag">{t}</span>)}
+              </div>
+            )}
           </div>
         ))}
         <div ref={endRef}/>
@@ -1584,6 +1747,63 @@ function ChaptersTab({ chapters, setChapters, story }) {
 }
 
 // ─────────────────────────────────────────────
+// TIMELINE TAB
+// ─────────────────────────────────────────────
+function TimelineTab({ timeline, setTimeline, onToast }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [date,  setDate]  = useState('');
+  const [event, setEvent] = useState('');
+
+  const add = () => {
+    if (!event.trim()) return;
+    setTimeline(prev => [...prev, { id:uid(), date:date.trim(), event:event.trim() }]);
+    setDate(''); setEvent(''); setShowAdd(false);
+    onToast('Esemény rögzítve!', true);
+  };
+  const del = id => setTimeline(prev => prev.filter(e => e.id !== id));
+
+  return (
+    <div className="timeline-tab">
+      <div className="tl-bar">
+        <span style={{fontFamily:"'Cinzel',serif",fontSize:13,color:'var(--gold)',letterSpacing:'.1em'}}>IDŐVONAL</span>
+        <span style={{fontSize:10,color:'var(--muted)'}}>{timeline.length} esemény · Az AI látja és sosem mond ellent</span>
+        <div style={{marginLeft:'auto'}}>
+          <button className="btn btn-gold" onClick={()=>setShowAdd(v=>!v)}>+ Esemény</button>
+        </div>
+      </div>
+      {showAdd && (
+        <div className="tl-add-row">
+          <input className="fi" style={{width:130,flexShrink:0}} value={date} onChange={e=>setDate(e.target.value)}
+            placeholder="Időpont / fejezet"/>
+          <input className="fi" style={{flex:1}} value={event} onChange={e=>setEvent(e.target.value)}
+            placeholder="Mi történt?" autoFocus onKeyDown={e=>e.key==='Enter'&&add()}/>
+          <button className="btn btn-gold" onClick={add} disabled={!event.trim()}>Hozzáad</button>
+          <button className="btn btn-ghost" onClick={()=>setShowAdd(false)}>×</button>
+        </div>
+      )}
+      <div className="tl-list">
+        {timeline.length === 0 && (
+          <div className="empty">
+            <div className="empty-ico">📅</div>
+            <div className="empty-txt">
+              Még nincs rögzített esemény.<br/>
+              Az AI látja az idővonalat és nem öli meg azt, aki még él — nem felejti el, hogy Kaito megsérült.
+            </div>
+          </div>
+        )}
+        {timeline.map((e, i) => (
+          <div key={e.id} className="tl-item">
+            <span className="tl-date">{e.date || `#${i+1}`}</span>
+            <span className="tl-event">{e.event}</span>
+            <button className="tl-rm" onClick={()=>del(e.id)} title="Törlés">×</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // APP ROOT
 // ─────────────────────────────────────────────
 function App() {
@@ -1599,10 +1819,14 @@ function App() {
   const [showAPI,  setShowAPI] = useState(false);
   const [showLock, setShowLock]= useState(false);
 
-  const [history,  setHistory] = useState([]);
-  const [codex,    setCodex]   = useState({ characters:[], locations:[], lore:[] });
-  const [chapters, setChapters]= useState([]);
-  const [locked,   setLocked]  = useState([]);
+  const [history,      setHistory]     = useState([]);
+  const [codex,        setCodex]       = useState({ characters:[], locations:[], lore:[] });
+  const [chapters,     setChapters]    = useState([]);
+  const [locked,       setLocked]      = useState([]);
+  const [timeline,     setTimeline]    = useState([]);
+  const [userStyle,    setUserStyle]   = useState('');
+  const [lastMood,     setLastMood]    = useState([]);
+  const [pendingNames, setPendingNames]= useState([]);
   const importRef = useRef(null);
 
   // Persist auto-save
@@ -1613,7 +1837,10 @@ function App() {
       setCodex(d.codex || { characters:[], locations:[], lore:[] });
       setChapters(d.chapters || []);
       setLocked(d.locked || []);
+      setTimeline(d.timeline || []);
     }
+    const savedStyle = localStorage.getItem('tarsiro_style') || '';
+    if (savedStyle) setUserStyle(savedStyle);
     const prov = localStorage.getItem('tarsiro_provider') || 'groq';
     const ckey = localStorage.getItem(KEY_KEY) || '';
     const gkey = localStorage.getItem('tarsiro_geminikey') || '';
@@ -1631,24 +1858,34 @@ function App() {
   }, []);
 
   useEffect(() => {
-    save({ history, codex, chapters, locked });
-  }, [history, codex, chapters, locked]);
+    save({ history, codex, chapters, locked, timeline });
+  }, [history, codex, chapters, locked, timeline]);
 
   const toast$ = (msg, ok=false) => {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 3400);
   };
 
-  const saveSettings = ({ provider: prov, apiKey: akey, geminiKey: gkey, groqKey: rkey, orKey: okey }) => {
+  const saveSettings = ({ provider: prov, apiKey: akey, geminiKey: gkey, groqKey: rkey, orKey: okey, userStyle: style }) => {
     setProvider(prov);
     localStorage.setItem('tarsiro_provider', prov);
     if (akey.trim()) { setApiKey(akey.trim()); localStorage.setItem(KEY_KEY, akey.trim()); }
     if (gkey.trim()) { setGeminiKey(gkey.trim()); localStorage.setItem('tarsiro_geminikey', gkey.trim()); }
     if (rkey.trim()) { setGroqKey(rkey.trim()); localStorage.setItem('tarsiro_groqkey', rkey.trim()); }
     if (okey.trim()) { setOrKey(okey.trim()); localStorage.setItem('tarsiro_orkey', okey.trim()); }
+    if (style !== undefined) { setUserStyle(style); localStorage.setItem('tarsiro_style', style); }
     setShowAPI(false);
     const labels = { groq:'🟣 Groq beállítva!', gemini:'🟢 Gemini beállítva!', claude:'🔴 Claude beállítva!', openrouter:'🔞 OpenRouter beállítva!' };
     toast$(labels[prov] || 'Beállítva!', true);
+  };
+
+  const addPendingName = (name) => {
+    setCodex(prev => ({
+      ...prev,
+      characters: [...prev.characters, { id:uid(), name, description:'', motivation:'', background:'', voice:'', locked:false }]
+    }));
+    toast$(`✅ "${name}" hozzáadva a Codexhez!`, true);
+    setPendingNames(prev => prev.filter(n => n !== name));
   };
 
   const addLock = text => {
@@ -1742,8 +1979,9 @@ function App() {
       if (last.role === 'user') last.content += '\n\n[IMPORTANT: Your reply must be in English only.]';
     }
     const callFn = activeProv==='gemini' ? callGemini : activeProv==='groq' ? callGroq : activeProv==='openrouter' ? callOpenRouter : callClaude;
+    const extras = { timeline, userStyle, lastMood };
     try {
-      const result = await callFn(activeKey, apiMsgs, storyFromHistory(withUser), codex, locked, mode, activeLang, text => {
+      const result = await callFn(activeKey, apiMsgs, storyFromHistory(withUser), codex, locked, mode, activeLang, extras, text => {
         setHistory(prev => {
           const u = [...prev];
           u[u.length-1] = { role:'ai', content:text, ts:Date.now() };
@@ -1757,13 +1995,19 @@ function App() {
           : 'Folytasd pontosan ahol abbahagytad, ugyanabban a stílusban és hangnemben.';
         const contMsgs = [...apiMsgs, { role:'assistant', content: result.text }, { role:'user', content: contPrompt }];
         try {
-          const cont = await callFn(activeKey, contMsgs, storyFromHistory(withUser), codex, locked, mode, activeLang, text => {
+          const cont = await callFn(activeKey, contMsgs, storyFromHistory(withUser), codex, locked, mode, activeLang, extras, text => {
             setHistory(prev => { const u = [...prev]; u[u.length-1] = { role:'ai', content: finalText + text, ts:Date.now() }; return u; });
           });
           finalText = finalText + cont.text;
         } catch(e) { /* ha a folytatás hibázik, az eredeti marad */ }
         setHistory(prev => { const u = [...prev]; u[u.length-1] = { ...u[u.length-1], content: finalText }; return u; });
       }
+      // Mood + name detection after final text settled
+      const mood = detectMood(finalText);
+      setLastMood(mood);
+      setHistory(prev => { const u=[...prev]; if(u[u.length-1]?.role==='ai') u[u.length-1]={...u[u.length-1], mood}; return u; });
+      const newNames = detectNewNames(finalText, codex);
+      if (newNames.length) setPendingNames(newNames);
     } catch(e) {
       setHistory(withUser);
       toast$(`API hiba: ${e.message}`);
@@ -1780,7 +2024,7 @@ function App() {
       <header className="header">
         <div className="logo">TÁRSÍRÓ <em>AI TÖRTÉNETÍRÓ</em></div>
         <nav className="tabs">
-          {[['editor','Szerkesztő'],['codex','Codex'],['chapters','Fejezetek']].map(([id,label]) => (
+          {[['editor','Szerkesztő'],['codex','Codex'],['chapters','Fejezetek'],['timeline','📅 Idővonal']].map(([id,label]) => (
             <button key={id} className={`tab ${tab===id?'active':''}`} onClick={()=>setTab(id)}>{label}</button>
           ))}
         </nav>
@@ -1812,13 +2056,19 @@ function App() {
         {tab === 'editor' && (
           <EditorTab history={history}
             onSend={onSend} loading={loading} locked={locked} onLockAdd={addLock} onToast={toast$}
-            lang={lang} setLang={l => { setLang(l); localStorage.setItem('tarsiro_lang', l); }}/>
+            lang={lang} setLang={l => { setLang(l); localStorage.setItem('tarsiro_lang', l); }}
+            pendingNames={pendingNames}
+            onAddToCodex={addPendingName}
+            onDismissName={name => setPendingNames(prev => prev.filter(n => n !== name))}/>
         )}
         {tab === 'codex' && (
           <CodexTab codex={codex} setCodex={setCodex} locked={locked} setLocked={setLocked}/>
         )}
         {tab === 'chapters' && (
           <ChaptersTab chapters={chapters} setChapters={setChapters} story=""/>
+        )}
+        {tab === 'timeline' && (
+          <TimelineTab timeline={timeline} setTimeline={setTimeline} onToast={toast$}/>
         )}
       </main>
 
@@ -1840,7 +2090,7 @@ function App() {
       </div>
 
       {/* Modals */}
-      {showAPI  && <SettingsModal provider={provider} apiKey={apiKey} geminiKey={geminiKey} groqKey={groqKey} orKey={orKey} onSave={saveSettings} onClose={()=>setShowAPI(false)}/>}
+      {showAPI  && <SettingsModal provider={provider} apiKey={apiKey} geminiKey={geminiKey} groqKey={groqKey} orKey={orKey} userStyle={userStyle} onSave={saveSettings} onClose={()=>setShowAPI(false)}/>}
       {showLock && <LockModal onLock={t=>{ addLock(t); setShowLock(false); }} onClose={()=>setShowLock(false)}/>}
 
       {/* Toast */}
